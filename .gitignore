@@ -1,0 +1,40 @@
+# Environment variables
+.env
+backend/.env
+frontend/.env
+*.env
+
+# Dependencies
+node_modules/
+backend/venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+
+# Databases
+*.db
+*.sqlite3
+backend/fyp_database_v3.db
+backend/sql_app.db
+
+# Frontend builds
+frontend/dist/
+frontend/build/
+.next/
+out/
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "autoprefixer": "^10.5.0",
+    "axios": "^1.16.1",
+    "lucide-react": "^1.14.0",
+    "postcss": "^8.5.14",
+    "react-router-dom": "^7.15.0",
+    "tailwindcss": "^4.3.0"
+  }
+}
