@@ -19,10 +19,11 @@ from datetime import datetime, timedelta
 import os
 from pydantic import BaseModel
 from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi.security import OAuth2PasswordRequestForm
 import auth
 
-load_dotenv()
 
 # We will import these inside the functions or conditionally if there are installation delays,
 # but since they are being installed, we can safely import them globally once installed.
