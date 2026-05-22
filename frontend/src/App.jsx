@@ -21,6 +21,10 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/?modal=login" replace />;
   }
   
+  if (!user.is_verified) {
+    return <Navigate to="/verify-otp" replace />;
+  }
+  
   return children;
 };
 

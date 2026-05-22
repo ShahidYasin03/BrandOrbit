@@ -53,3 +53,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     if user is None:
         raise credentials_exception
     return user
+
+async def get_verified_user(current_user: models.User = Depends(get_current_user)):
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account not verified. Please verify your OTP first."
+        )
+    return current_user

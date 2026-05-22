@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, ArrowRight, ArrowLeft } from 'lucide-react';
 import logo from '../assets/HorizontalLogo.svg';
+import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
 const StarField = () => {
   const canvasRef = useRef(null);
@@ -41,12 +43,64 @@ const StarField = () => {
 
 const VerifyOTP = () => {
   const navigate = useNavigate();
+  const { user, setUser, loading: authLoading } = useAuth();
+  const [digits, setDigits] = useState(['', '', '', '', '']);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleVerify = (e) => {
+  useEffect(() => {
+    if (!authLoading) {
+      if (!user) {
+        navigate('/');
+      } else if (user.is_verified) {
+        navigate('/dashboard');
+      }
+    }
+  }, [user, authLoading, navigate]);
+
+  if (authLoading) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ background: '#08090c', color: '#4a5568' }}>Loading...</div>;
+  }
+
+  const handleVerify = async (e) => {
     e.preventDefault();
-    // TODO: Implement actual OTP verification with backend
-    alert("OTP Verification is coming soon! For now, you can proceed to the dashboard.");
-    navigate('/dashboard');
+    setError('');
+    const otpCode = digits.join('');
+    if (otpCode.length < 5) {
+      setError('Please enter all 5 digits of the code.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.post('/auth/verify-otp', {
+        email: user?.email,
+        otp: otpCode
+      });
+      alert('Verification successful!');
+      setUser({ ...user, is_verified: true });
+      navigate('/dashboard');
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.detail || 'Verification failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError('');
+    if (!user?.email) {
+      setError('User email not found. Please log in again.');
+      return;
+    }
+    try {
+      const res = await api.post('/auth/resend-otp', { email: user.email });
+      alert(res.data?.message || 'Verification code resent! Check your terminal console.');
+      setDigits(['', '', '', '', '']);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to resend code.');
+    }
   };
 
   const inputStyle = {
@@ -96,17 +150,45 @@ const VerifyOTP = () => {
           </div>
           
           <h2 className="text-2xl font-bold mb-2" style={{ color: '#dde1e7', letterSpacing: '-0.01em' }}>Check your email</h2>
-          <p className="text-sm mb-8" style={{ color: '#4a5568' }}>
-            We&apos;ve sent a verification code to your email. Please enter it below.
+          <p className="text-sm mb-4" style={{ color: '#8b949e' }}>
+            We&apos;ve sent a verification code to <span className="font-semibold text-teal-400">{user?.email || 'your email'}</span>.
           </p>
+          <p className="text-xs mb-8" style={{ color: '#4a5568' }}>
+            For local testing, the code has been printed directly to your backend server console.
+          </p>
+
+          {error && (
+            <div className="px-4 py-3 rounded-xl mb-6 text-sm text-left animate-fade-in"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#f87171' }}>
+              {error}
+            </div>
+          )}
 
           <form onSubmit={handleVerify} className="space-y-8">
             <div className="flex justify-center gap-3">
-              {[1, 2, 3, 4, 5].map((digit) => (
+              {[0, 1, 2, 3, 4].map((index) => (
                 <input
-                  key={digit}
+                  key={index}
                   type="text"
                   maxLength="1"
+                  value={digits[index]}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const newDigits = [...digits];
+                    newDigits[index] = val;
+                    setDigits(newDigits);
+                    
+                    // Auto-focus next input if a value is entered
+                    if (val && e.target.nextSibling) {
+                      e.target.nextSibling.focus();
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    // Backspace auto-focus previous input
+                    if (e.key === 'Backspace' && !digits[index] && e.target.previousSibling) {
+                      e.target.previousSibling.focus();
+                    }
+                  }}
                   className="w-12 h-14 text-center text-xl font-bold rounded-xl outline-none transition-all"
                   style={inputStyle}
                   onFocus={focusOn}
@@ -118,10 +200,11 @@ const VerifyOTP = () => {
 
             <button
               type="submit"
-              className="w-full py-3 rounded-full text-sm font-bold transition-all flex items-center justify-center gap-2"
+              disabled={loading}
+              className="w-full py-3 rounded-full text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               style={{ background: '#2dd4bf', color: '#071012' }}
             >
-              Verify Account
+              {loading ? 'Verifying...' : 'Verify Account'}
               <ArrowRight size={18} />
             </button>
           </form>
@@ -129,8 +212,8 @@ const VerifyOTP = () => {
           <p className="mt-8 text-sm" style={{ color: '#3d4450' }}>
             Didn&apos;t receive the code?{' '}
             <button 
-              onClick={() => alert('Resend OTP logic coming soon!')}
-              className="font-medium transition-colors hover:opacity-80"
+              onClick={handleResend}
+              className="font-medium transition-colors hover:opacity-80 cursor-pointer"
               style={{ color: '#2dd4bf' }}
             >
               Click to resend

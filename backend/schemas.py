@@ -7,6 +7,7 @@ from models import StatusEnum, UserRoleEnum
 class UserBase(BaseModel):
     email: str
     role: UserRoleEnum = UserRoleEnum.EDITOR
+    is_verified: bool = False
 
 class UserCreate(UserBase):
     password: str
@@ -45,6 +46,7 @@ class PostingPlanBase(BaseModel):
     active_days: List[str]
     time_slots: List[str]
     volume: str
+    is_active: bool = True
 
 class PostingPlanCreate(PostingPlanBase):
     pass
@@ -63,10 +65,6 @@ class BrandBase(BaseModel):
     niche: Optional[str] = None
     quirks: Optional[str] = None
     persona_guidelines: Optional[str] = None
-    twitter_api_key: Optional[str] = None
-    twitter_api_secret: Optional[str] = None
-    twitter_access_token: Optional[str] = None
-    twitter_access_secret: Optional[str] = None
     
     # Twitter OAuth 2.0 Credentials
     twitter_oauth2_access_token: Optional[str] = None

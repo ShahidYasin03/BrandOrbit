@@ -20,6 +20,7 @@ const ScheduleEngine = () => {
   const [activeDays, setActiveDays] = useState([]);
   const [timeSlots, setTimeSlots] = useState(["09:00"]);
   const [volume, setVolume] = useState("chill");
+  const [isActive, setIsActive] = useState(true);
   const refreshTimerRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +33,9 @@ const ScheduleEngine = () => {
         setActiveDays(planRes.data.active_days || []);
         setTimeSlots(planRes.data.time_slots || ["09:00"]);
         setVolume(planRes.data.volume || "chill");
+        setIsActive(planRes.data.is_active !== false);
+      } else {
+        setIsActive(true);
       }
     }).catch(console.error)
       .finally(() => setLoading(false));
@@ -92,10 +96,16 @@ const ScheduleEngine = () => {
     setTimeSlots(newSlots);
   };
 
-  const handleSave = () => {
+  const handleSave = (targetActiveState = isActive) => {
     setSaving(true);
-    api.post(`/brands/${brandId}/plan`, { active_days: activeDays, time_slots: timeSlots, volume })
-      .then(() => {
+    api.post(`/brands/${brandId}/plan`, { 
+      active_days: activeDays, 
+      time_slots: timeSlots, 
+      volume,
+      is_active: targetActiveState
+    })
+      .then((res) => {
+        setIsActive(res.data.is_active);
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
         fetchQueue();
@@ -107,6 +117,9 @@ const ScheduleEngine = () => {
       .finally(() => setSaving(false));
   };
 
+  const isManual = activeBrand?.automation_mode === 'manual';
+  const hasTwitterSetup = Boolean(activeBrand?.twitter_username);
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-64 space-y-4">
       <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(45,212,191,0.2)', borderTopColor: '#2dd4bf' }} />
@@ -114,27 +127,89 @@ const ScheduleEngine = () => {
     </div>
   );
 
-  const isManual = activeBrand?.automation_mode === 'manual';
-  const hasTwitterSetup = Boolean(activeBrand?.twitter_api_key && activeBrand?.twitter_access_token);
+  // Un-bypassable custom overlay interceptor modal if X is disconnected
+  if (!loading && activeBrand && !hasTwitterSetup) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#07090e]/80 backdrop-blur-md">
+        <div className="relative w-full max-w-lg p-8 rounded-2xl overflow-hidden border border-white/10 shadow-2xl transition-all duration-300"
+          style={{ background: 'linear-gradient(135deg, #0e121a 0%, #080a0f 100%)', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+          {/* Decorative glowing gradient sphere */}
+          <div className="absolute top-0 right-0 w-48 h-48 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none opacity-20"
+            style={{ background: '#2dd4bf' }}></div>
+          
+          <div className="relative z-10 text-center space-y-6">
+            <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
+              <Zap style={{ color: '#f87171' }} size={32} />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-2xl font-bold tracking-tight text-[#dde1e7]">
+                X Connection Required
+              </h3>
+              <p className="text-sm leading-relaxed text-[#8b949e]">
+                To access the <strong>Schedule Engine</strong>, your brand must have an active X (Twitter) account connected. This enables the scheduler to safely queue and publish your content.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl text-left border border-white/5 space-y-2" style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#2dd4bf] block">OAuth 2.0 Security</span>
+              <p className="text-xs text-[#6e7681]">
+                We use secure Twitter OAuth 2.0 PKCE. Your login session is fully encrypted and credentials are never stored.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-4 pt-4">
+              <button 
+                onClick={() => navigate('/dashboard')}
+                className="w-full px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 border cursor-pointer border-white/10 hover:bg-white/5 text-[#dde1e7]"
+              >
+                Back to Dashboard
+              </button>
+              <button 
+                onClick={() => navigate('/brands')}
+                className="w-full px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 cursor-pointer flex items-center justify-center gap-2"
+                style={{ background: '#2dd4bf', color: '#071012', boxShadow: '0 8px 24px rgba(45,212,191,0.2)' }}
+              >
+                <Target size={14} /> Connect X Account
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-10">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center"
-          style={{ background: 'rgba(45,212,191,0.08)', border: '1px solid rgba(45,212,191,0.15)' }}>
-          <CalendarDays style={{ color: '#2dd4bf' }} size={24} />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+            style={{ background: 'rgba(45,212,191,0.08)', border: '1px solid rgba(45,212,191,0.15)' }}>
+            <CalendarDays style={{ color: '#2dd4bf' }} size={24} />
+          </div>
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight text-[#dde1e7]" style={{ letterSpacing: '-0.02em' }}>Schedule Engine</h2>
+            <p className="text-sm mt-1 text-[#4a5568]">
+              {isManual ? 'Manual Queue — you fill the slots' : 'Auto-Pilot — AI fills the slots'}
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight" style={{ color: '#dde1e7', letterSpacing: '-0.02em' }}>Schedule Engine</h2>
-          <p className="text-sm mt-1" style={{ color: '#4a5568' }}>
-            {isManual ? 'Manual Queue — you fill the slots' : 'Auto-Pilot — AI fills the slots'}
-          </p>
-        </div>
-        <div className="ml-auto px-4 py-2 rounded-xl border text-[10px] font-bold uppercase tracking-widest flex items-center gap-2"
-          style={{ background: 'rgba(45,212,191,0.08)', border: '1px solid rgba(45,212,191,0.15)', color: '#2dd4bf' }}>
-          <div className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></div>
-          {isManual ? 'Manual Mode' : 'Auto-Pilot Active'}
+
+        <div className="flex items-center gap-3 self-start sm:self-center">
+          {hasTwitterSetup && (
+            <div className="px-4 py-2 rounded-xl border text-[10px] font-bold uppercase tracking-widest flex items-center gap-2"
+              style={{ background: 'rgba(29,161,242,0.08)', border: '1px solid rgba(29,161,242,0.15)', color: '#1da1f2' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+              @{activeBrand.twitter_username} Connected
+            </div>
+          )}
+          <div className="px-4 py-2 rounded-xl border text-[10px] font-bold uppercase tracking-widest flex items-center gap-2"
+            style={{ background: 'rgba(45,212,191,0.08)', border: '1px solid rgba(45,212,191,0.15)', color: '#2dd4bf' }}>
+            <div className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></div>
+            {isManual ? 'Manual Mode' : 'Auto-Pilot Active'}
+          </div>
         </div>
       </div>
 
@@ -314,33 +389,77 @@ const ScheduleEngine = () => {
         )}
       </div>
 
-      {/* Save Bar */}
-      <div className="flex justify-between items-center px-8 py-5 rounded-2xl" style={{ background: '#0e1117', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div>
-          {success && (
-            <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#2dd4bf' }}>
-              <CheckCircle2 size={14} /> Schedule saved successfully
-            </span>
-          )}
-          {!hasTwitterSetup && !success && (
-            <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest" style={{ color: '#f87171' }}>
-              ⚠️ X Account Not Connected - Please setup in Brand Settings first
-            </span>
-          )}
+      {/* Active / Paused Status Control Panel */}
+      <div className="flex flex-col md:flex-row justify-between items-center gap-6 p-8 rounded-2xl border" style={{ background: '#0e1117', borderColor: 'rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center gap-4">
+          <div className="relative flex items-center justify-center shrink-0">
+            <span className={`w-3.5 h-3.5 rounded-full ${isActive ? 'bg-teal-400' : 'bg-amber-500'}`} />
+            {isActive && <span className="absolute w-3.5 h-3.5 rounded-full bg-teal-400 animate-ping opacity-75" />}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold uppercase tracking-widest text-[#dde1e7]">
+                Schedule Status: {isActive ? 'Active' : 'Paused'}
+              </h4>
+              {success && (
+                <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                  Saved
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-1 max-w-lg leading-relaxed">
+              {isActive 
+                ? 'The posting plan is active. Queued drafts will publish automatically at your scheduled slots.' 
+                : 'The posting plan is paused. Upcoming queue is locked and will not publish to X.'}
+            </p>
+          </div>
         </div>
-        <div className="flex gap-4">
-          <button onClick={() => navigate('/dashboard')} className="px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest transition-colors" style={{ color: '#4a5568' }} onMouseEnter={e => e.currentTarget.style.color = '#dde1e7'} onMouseLeave={e => e.currentTarget.style.color = '#4a5568'}>
-            Back
-          </button>
-          <button
-            onClick={hasTwitterSetup ? handleSave : () => alert('Please add X account keys in Brand Manager to start posting.')}
-            disabled={saving || activeDays.length === 0 || !hasTwitterSetup}
-            className="px-8 py-3 rounded-full text-sm font-bold transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
-            style={{ background: '#2dd4bf', color: '#071012', boxShadow: '0 8px 24px rgba(45,212,191,0.2)' }}
-            title={!hasTwitterSetup ? "X Account Not Connected" : ""}
+
+        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto justify-end">
+          <button 
+            onClick={() => navigate('/dashboard')} 
+            className="px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors border border-white/5 bg-white/2 text-[#dde1e7] hover:bg-white/5 shrink-0"
           >
-            <Save size={16} /> {saving ? 'Saving...' : 'Save Schedule'}
+            Dashboard
           </button>
+
+          {isActive ? (
+            <>
+              <button
+                onClick={() => handleSave(false)}
+                disabled={saving || activeDays.length === 0}
+                className="px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 cursor-pointer border border-amber-500/20 bg-amber-500/5 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50 shrink-0"
+              >
+                Pause Schedule
+              </button>
+              <button
+                onClick={() => handleSave(true)}
+                disabled={saving || activeDays.length === 0}
+                className="px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 shrink-0"
+                style={{ background: '#2dd4bf', color: '#071012', boxShadow: '0 8px 24px rgba(45,212,191,0.15)' }}
+              >
+                <Save size={14} /> {saving ? 'Saving...' : 'Save & Keep Active'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => handleSave(false)}
+                disabled={saving || activeDays.length === 0}
+                className="px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 cursor-pointer border border-white/10 bg-white/4 text-[#dde1e7] hover:bg-white/8 disabled:opacity-50 shrink-0"
+              >
+                Save Draft
+              </button>
+              <button
+                onClick={() => handleSave(true)}
+                disabled={saving || activeDays.length === 0}
+                className="px-8 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 shrink-0"
+                style={{ background: '#2dd4bf', color: '#071012', boxShadow: '0 8px 24px rgba(45,212,191,0.15)' }}
+              >
+                <Activity size={14} /> {saving ? 'Saving...' : 'Activate Schedule'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

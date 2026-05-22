@@ -1,3 +1,16 @@
+# Monkey patch urllib3 Retry class to fix pytrends incompatibility with newer urllib3 versions
+try:
+    import urllib3.util.retry
+    original_init = urllib3.util.retry.Retry.__init__
+    def patched_init(self, *args, **kwargs):
+        if 'method_whitelist' in kwargs:
+            kwargs['allowed_methods'] = kwargs.pop('method_whitelist')
+        original_init(self, *args, **kwargs)
+    urllib3.util.retry.Retry.__init__ = patched_init
+    print("[Patches] Successfully monkey-patched urllib3 Retry for pytrends compatibility.")
+except Exception as patch_err:
+    print(f"[Patches] Failed to patch urllib3 Retry: {patch_err}")
+
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -17,10 +30,15 @@ from groq import Groq
 from pytrends.request import TrendReq
 import tweepy
 import time
+import google.generativeai as genai
 
 # --- Trend cache: avoids hammering Google on every page load ---
 # Structure: { niche_key: { 'topics': [...], 'expires_at': timestamp } }
 _trend_cache: dict = {}
+
+# --- OTP store for local development/testing ---
+# Structure: { email: otp_code_string }
+_otp_store: dict = {}
 
 import models
 import schemas
@@ -130,6 +148,12 @@ def publish_scheduled_content():
                 print(f"[Scheduler] Brand not found for item {item.id}, skipping.")
                 continue
 
+            # Check if brand's posting plan is configured and active
+            db_plan = db.query(models.PostingPlan).filter(models.PostingPlan.brand_id == db_brand.id).first()
+            if db_plan and not db_plan.is_active:
+                print(f"[Scheduler] Posting schedule plan for brand '{db_brand.name}' is PAUSED/INACTIVE. Skipping item {item.id}.")
+                continue
+
             # Use Python date object (required by SQLAlchemy Date column)
             today = now.date()
 
@@ -145,14 +169,8 @@ def publish_scheduled_content():
                 continue
 
             oauth_token = get_valid_twitter_token(db_brand, db)
-            has_old_keys = all([
-                db_brand.twitter_api_key,
-                db_brand.twitter_api_secret,
-                db_brand.twitter_access_token,
-                db_brand.twitter_access_secret,
-            ])
 
-            print(f"[Scheduler] Processing item {item.id} for brand '{db_brand.name}'. OAuth2 active: {oauth_token is not None}, Legacy keys: {has_old_keys}")
+            print(f"[Scheduler] Processing item {item.id} for brand '{db_brand.name}'. OAuth2 active: {oauth_token is not None}")
 
             success = False
             if oauth_token:
@@ -174,22 +192,6 @@ def publish_scheduled_content():
                         db.commit()
                 except Exception as e:
                     print(f"[Scheduler] Exception publishing item {item.id} via OAuth 2.0: {e}")
-                    item.tweet_id = f"failed:{str(e)[:80]}"
-                    db.commit()
-            elif has_old_keys:
-                try:
-                    client = tweepy.Client(
-                        consumer_key=db_brand.twitter_api_key,
-                        consumer_secret=db_brand.twitter_api_secret,
-                        access_token=db_brand.twitter_access_token,
-                        access_token_secret=db_brand.twitter_access_secret,
-                    )
-                    response = client.create_tweet(text=item.body)
-                    item.tweet_id = str(response.data['id'])
-                    success = True
-                    print(f"[Scheduler] Published item {item.id} via Legacy API -> tweet_id={item.tweet_id}")
-                except Exception as e:
-                    print(f"[Scheduler] Failed to publish via Legacy API: {e}")
                     item.tweet_id = f"failed:{str(e)[:80]}"
                     db.commit()
             else:
@@ -248,11 +250,22 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+    
     hashed_password = auth.get_password_hash(user.password)
     db_user = models.User(email=user.email, hashed_password=hashed_password)
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+
+    # Generate 5-digit OTP and print to terminal
+    import random
+    otp_code = str(random.randint(10000, 99999))
+    _otp_store[user.email] = otp_code
+    
+    print("\n" + "="*60)
+    print(f" [OTP SERVICE] Verification Code for {user.email}: {otp_code}")
+    print("="*60 + "\n")
+
     return db_user
 
 @app.post("/api/auth/login", response_model=schemas.Token)
@@ -266,6 +279,48 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str
+
+class ResendOTPRequest(BaseModel):
+    email: str
+
+@app.post("/api/auth/verify-otp")
+def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
+    email = payload.email
+    otp = payload.otp
+    
+    if email not in _otp_store:
+        raise HTTPException(status_code=400, detail="No active verification code found for this email.")
+        
+    if _otp_store[email] != otp:
+        raise HTTPException(status_code=400, detail="Invalid verification code. Please check your terminal console.")
+        
+    # Successful verification! We clean up the OTP
+    del _otp_store[email]
+    
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user:
+        user.is_verified = True
+        db.commit()
+        
+    return {"status": "success", "message": "OTP verified successfully!"}
+
+@app.post("/api/auth/resend-otp")
+def resend_otp(payload: ResendOTPRequest):
+    email = payload.email
+    
+    import random
+    otp_code = str(random.randint(10000, 99999))
+    _otp_store[email] = otp_code
+    
+    print("\n" + "="*60)
+    print(f" [OTP SERVICE - RESEND] New Code for {email}: {otp_code}")
+    print("="*60 + "\n")
+    
+    return {"status": "success", "message": "OTP resent successfully! Check your terminal console."}
+
 @app.get("/api/users/me", response_model=schemas.User)
 def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
     return current_user
@@ -273,7 +328,7 @@ def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
 # --- Brands ---
 
 @app.post("/api/brands/", response_model=schemas.Brand)
-def create_brand(brand: schemas.BrandCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def create_brand(brand: schemas.BrandCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_brand = models.Brand(**brand.model_dump(), owner_id=current_user.id)
     db.add(db_brand)
     db.commit()
@@ -281,13 +336,13 @@ def create_brand(brand: schemas.BrandCreate, db: Session = Depends(get_db), curr
     return db_brand
 
 @app.get("/api/brands/", response_model=List[schemas.Brand])
-def read_brands(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_brands(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     brands = db.query(models.Brand).filter(models.Brand.owner_id == current_user.id).offset(skip).limit(limit).all()
     return brands
 
 # --- Posting Plan Endpoints ---
 @app.get("/api/brands/{brand_id}/plan", response_model=schemas.PostingPlan)
-def get_posting_plan(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def get_posting_plan(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand:
         raise HTTPException(status_code=404, detail="Brand not found")
@@ -297,7 +352,7 @@ def get_posting_plan(brand_id: int, db: Session = Depends(get_db), current_user:
     return db_plan
 
 @app.post("/api/brands/{brand_id}/plan", response_model=schemas.PostingPlan)
-def update_posting_plan(brand_id: int, plan: schemas.PostingPlanCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def update_posting_plan(brand_id: int, plan: schemas.PostingPlanCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand:
         raise HTTPException(status_code=404, detail="Brand not found")
@@ -306,8 +361,15 @@ def update_posting_plan(brand_id: int, plan: schemas.PostingPlanCreate, db: Sess
         db_plan.active_days = plan.active_days
         db_plan.time_slots = plan.time_slots
         db_plan.volume = plan.volume
+        db_plan.is_active = plan.is_active
     else:
-        db_plan = models.PostingPlan(brand_id=brand_id, active_days=plan.active_days, time_slots=plan.time_slots, volume=plan.volume)
+        db_plan = models.PostingPlan(
+            brand_id=brand_id,
+            active_days=plan.active_days,
+            time_slots=plan.time_slots,
+            volume=plan.volume,
+            is_active=plan.is_active
+        )
         db.add(db_plan)
     db.commit()
     db.refresh(db_plan)
@@ -315,14 +377,14 @@ def update_posting_plan(brand_id: int, plan: schemas.PostingPlanCreate, db: Sess
     return db_plan
 
 @app.get("/api/brands/{brand_id}", response_model=schemas.Brand)
-def read_brand(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_brand(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if brand is None:
         raise HTTPException(status_code=404, detail="Brand not found")
     return brand
 
 @app.put("/api/brands/{brand_id}", response_model=schemas.Brand)
-def update_brand(brand_id: int, brand_update: schemas.BrandCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def update_brand(brand_id: int, brand_update: schemas.BrandCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand:
         raise HTTPException(status_code=404, detail="Brand not found")
@@ -352,7 +414,7 @@ class ModeUpdate(BaseModel):
     automation_mode: str
 
 @app.put("/api/brands/{brand_id}/mode", response_model=schemas.Brand)
-def update_brand_mode(brand_id: int, mode_update: ModeUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def update_brand_mode(brand_id: int, mode_update: ModeUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand:
         raise HTTPException(status_code=404, detail="Brand not found")
@@ -382,12 +444,14 @@ def _trigger_ai_generation(brand_id: int, db: Session, trend_context: str = "Gen
     if db_brand.generations_today >= 4:
         return []
         
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
+    groq_key = os.getenv("GROQ_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not groq_key and not gemini_key:
+        print("[_trigger_ai_generation] No API keys configured in environment.")
         return []
         
     try:
-        client = Groq(api_key=api_key)
+        response_text = ""
         prompt = f"""
         You are an expert social media manager and copywriter for the brand '{db_brand.name}'.
         Niche: {db_brand.niche}
@@ -401,13 +465,33 @@ def _trigger_ai_generation(brand_id: int, db: Session, trend_context: str = "Gen
         Use engaging hooks and strategic emojis to make the posts sound interesting and human, but keep them concise.
         Separate each distinct post with '|||'. Do not include extra conversational text.
         """
+
+        if groq_key:
+            try:
+                print(f"[_trigger_ai_generation] Using Groq LLaMA-3.3 for brand {db_brand.name}...")
+                client = Groq(api_key=groq_key)
+                chat_completion = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama-3.3-70b-versatile",
+                )
+                response_text = chat_completion.choices[0].message.content
+            except Exception as groq_err:
+                print(f"[_trigger_ai_generation] Groq generation failed: {groq_err}")
+                if gemini_key:
+                    print(f"[_trigger_ai_generation] Falling back to Google Gemini...")
+                    genai.configure(api_key=gemini_key)
+                    model = genai.GenerativeModel("gemini-flash-latest")
+                    response = model.generate_content(prompt)
+                    response_text = response.text
+                else:
+                    raise groq_err
+        else:
+            print(f"[_trigger_ai_generation] Groq key absent. Falling back to Google Gemini for brand {db_brand.name}...")
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel("gemini-flash-latest")
+            response = model.generate_content(prompt)
+            response_text = response.text
         
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-        )
-        
-        response_text = chat_completion.choices[0].message.content
         posts = [t.strip() for t in response_text.split('|||') if t.strip()]
         
         created_items = []
@@ -468,10 +552,11 @@ def maintain_auto_queue(brand_id: int, db: Session):
 def recalculate_queue(brand_id: int, db: Session):
     db_plan = db.query(models.PostingPlan).filter(models.PostingPlan.brand_id == brand_id).first()
     
+    # Query both SCHEDULED and APPROVED items so that approved items get scheduled once a plan is saved
     scheduled_items = db.query(models.ContentItem).filter(
         models.ContentItem.brand_id == brand_id,
-        models.ContentItem.status == models.StatusEnum.SCHEDULED
-    ).order_by(models.ContentItem.scheduled_for).all()
+        models.ContentItem.status.in_([models.StatusEnum.SCHEDULED, models.StatusEnum.APPROVED])
+    ).order_by(models.ContentItem.created_at).all()
 
     if not db_plan or not db_plan.active_days or not db_plan.time_slots:
         # If no plan exists, we cannot schedule. Revert items to APPROVED to avoid getting stuck with placeholder dates.
@@ -509,12 +594,13 @@ def recalculate_queue(brand_id: int, db: Session):
         current_date += timedelta(days=1)
         
     for i, item in enumerate(scheduled_items):
+        item.status = models.StatusEnum.SCHEDULED
         item.scheduled_for = slots[i]
         
     db.commit()
 
 @app.post("/api/brands/{brand_id}/content", response_model=schemas.ContentItem)
-def create_content_for_brand(brand_id: int, content: schemas.ContentItemCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def create_content_for_brand(brand_id: int, content: schemas.ContentItemCreate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand:
         raise HTTPException(status_code=404, detail="Brand not found")
@@ -526,14 +612,14 @@ def create_content_for_brand(brand_id: int, content: schemas.ContentItemCreate, 
     return db_content
 
 @app.get("/api/brands/{brand_id}/content", response_model=List[schemas.ContentItem])
-def read_content_for_brand(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def read_content_for_brand(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand:
         raise HTTPException(status_code=404, detail="Brand not found")
     return db.query(models.ContentItem).filter(models.ContentItem.brand_id == brand_id).order_by(models.ContentItem.created_at.desc()).all()
 
 @app.put("/api/content/{content_id}", response_model=schemas.ContentItem)
-def update_content(content_id: int, content_update: schemas.ContentItemUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def update_content(content_id: int, content_update: schemas.ContentItemUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_content = db.query(models.ContentItem).filter(models.ContentItem.id == content_id).first()
     if not db_content:
         raise HTTPException(status_code=404, detail="Content not found")
@@ -551,7 +637,7 @@ def update_content(content_id: int, content_update: schemas.ContentItemUpdate, d
     return db_content
 
 @app.delete("/api/content/{content_id}")
-def delete_content(content_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def delete_content(content_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_content = db.query(models.ContentItem).filter(models.ContentItem.id == content_id).first()
     if not db_content:
         raise HTTPException(status_code=404, detail="Content not found")
@@ -632,6 +718,11 @@ def smart_schedule_content(content_id: int, db: Session = Depends(get_db)):
     if db_content.status != models.StatusEnum.APPROVED:
         raise HTTPException(status_code=400, detail="Content must be APPROVED to queue")
 
+    # Enforce active posting plan exist check
+    db_plan = db.query(models.PostingPlan).filter(models.PostingPlan.brand_id == db_content.brand_id).first()
+    if not db_plan or not db_plan.active_days or not db_plan.time_slots:
+        raise HTTPException(status_code=400, detail="Please configure a posting schedule in the Schedule Engine first.")
+
     # Set to far future BEFORE committing — prevents the background scheduler
     # from snatching it up in the window before recalculate_queue runs.
     db_content.status = models.StatusEnum.SCHEDULED
@@ -645,7 +736,7 @@ def smart_schedule_content(content_id: int, db: Session = Depends(get_db)):
     return db_content
 
 @app.post("/api/content/{content_id}/approve_and_queue", response_model=schemas.ContentItem)
-def approve_and_queue(content_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def approve_and_queue(content_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     """Atomically approve a DRAFT and immediately smart-schedule it. Avoids the
     two-request race window that existed with separate approve + smart_schedule calls."""
     db_content = db.query(models.ContentItem).filter(models.ContentItem.id == content_id).first()
@@ -658,6 +749,11 @@ def approve_and_queue(content_id: int, db: Session = Depends(get_db), current_us
     if db_content.status not in [models.StatusEnum.DRAFT, models.StatusEnum.PENDING_APPROVAL]:
         raise HTTPException(status_code=400, detail="Content must be DRAFT or PENDING_APPROVAL")
 
+    # Enforce active posting plan exist check
+    db_plan = db.query(models.PostingPlan).filter(models.PostingPlan.brand_id == db_content.brand_id).first()
+    if not db_plan or not db_plan.active_days or not db_plan.time_slots:
+        raise HTTPException(status_code=400, detail="Please configure a posting schedule in the Schedule Engine first.")
+
     db_content.status = models.StatusEnum.SCHEDULED
     db_content.scheduled_for = datetime.now() + timedelta(days=365)  # safe placeholder
     db.commit()
@@ -668,7 +764,7 @@ def approve_and_queue(content_id: int, db: Session = Depends(get_db), current_us
     return db_content
 
 @app.post("/api/content/{content_id}/remove_queue", response_model=schemas.ContentItem)
-def remove_from_queue(content_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+def remove_from_queue(content_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
     db_content = db.query(models.ContentItem).filter(models.ContentItem.id == content_id).first()
     if not db_content:
         raise HTTPException(status_code=404, detail="Content not found")
@@ -679,7 +775,7 @@ def remove_from_queue(content_id: int, db: Session = Depends(get_db), current_us
     if db_content.status != models.StatusEnum.SCHEDULED:
         raise HTTPException(status_code=400, detail="Content must be SCHEDULED to remove")
     
-    db_content.status = models.StatusEnum.APPROVED
+    db_content.status = models.StatusEnum.DRAFT
     db_content.scheduled_for = None
     db.commit()
     
@@ -726,10 +822,9 @@ def get_trends_for_brand(brand_id: int, db: Session = Depends(get_db)):
     # --- Step 2: LLM refines pytrends data OR generates from scratch ---
     try:
         api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise ValueError("GROQ_API_KEY not set")
-
-        client = Groq(api_key=api_key)
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if not api_key and not gemini_key:
+            raise ValueError("Neither GROQ_API_KEY nor GEMINI_API_KEY is configured in the environment.")
 
         if pytrends_raw:
             prompt = f"""
@@ -752,11 +847,30 @@ Format: A simple comma-separated list of exactly 3 items. No bullet points or nu
 Example: "Why fans are divided over the new VAR rule changes, How clubs are scouting talent in the digital age, The mental health conversation changing football culture"
 """
 
-        completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-        )
-        response_text = completion.choices[0].message.content.strip()
+        if api_key:
+            try:
+                client = Groq(api_key=api_key)
+                completion = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model="llama-3.3-70b-versatile",
+                )
+                response_text = completion.choices[0].message.content.strip()
+            except Exception as groq_err:
+                print(f"[Trends] Groq refinement failed: {groq_err}")
+                if gemini_key:
+                    print(f"[Trends] Falling back to Google Gemini for trends...")
+                    genai.configure(api_key=gemini_key)
+                    model = genai.GenerativeModel("gemini-flash-latest")
+                    response = model.generate_content(prompt)
+                    response_text = response.text.strip()
+                else:
+                    raise groq_err
+        else:
+            print(f"[Trends] Groq key absent. Falling back to Google Gemini for trends...")
+            genai.configure(api_key=gemini_key)
+            model = genai.GenerativeModel("gemini-flash-latest")
+            response = model.generate_content(prompt)
+            response_text = response.text.strip()
         # Strip surrounding quotes if the model added them
         response_text = response_text.strip('"').strip("'")
         topics = [t.strip() for t in response_text.split(',') if t.strip()]
@@ -797,12 +911,11 @@ def generate_content_for_brand(brand_id: int, request: schemas.TrendGenerateRequ
         raise HTTPException(status_code=429, detail="Daily post generation limit reached (4 max per day)")
         
     try:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            raise HTTPException(status_code=500, detail="GROQ_API_KEY environment variable not set. Please create a .env file with GROQ_API_KEY=your_key")
+        groq_key = os.getenv("GROQ_API_KEY")
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if not groq_key and not gemini_key:
+            raise HTTPException(status_code=500, detail="Neither GROQ_API_KEY nor GEMINI_API_KEY is configured in the environment. Please update your backend .env file.")
             
-        client = Groq(api_key=api_key)
-        
         trend_context = request.trend if request and request.trend else "General industry topics"
         
         created_items = _trigger_ai_generation(brand_id, db, trend_context)
@@ -831,12 +944,6 @@ def publish_content(content_id: int, db: Session = Depends(get_db)):
     db_brand = db.query(models.Brand).filter(models.Brand.id == db_content.brand_id).first()
     
     oauth_token = get_valid_twitter_token(db_brand, db)
-    has_old_keys = all([
-        db_brand.twitter_api_key,
-        db_brand.twitter_api_secret,
-        db_brand.twitter_access_token,
-        db_brand.twitter_access_secret
-    ])
     
     if oauth_token:
         try:
@@ -861,24 +968,6 @@ def publish_content(content_id: int, db: Session = Depends(get_db)):
             if isinstance(e, HTTPException):
                 raise e
             raise HTTPException(status_code=500, detail=f"Failed to post: {str(e)}")
-            
-    elif has_old_keys:
-        try:
-            client = tweepy.Client(
-                consumer_key=db_brand.twitter_api_key,
-                consumer_secret=db_brand.twitter_api_secret,
-                access_token=db_brand.twitter_access_token,
-                access_token_secret=db_brand.twitter_access_secret
-            )
-            response = client.create_tweet(text=db_content.body)
-            db_content.status = models.StatusEnum.PUBLISHED
-            db_content.tweet_id = str(response.data['id'])
-            db.commit()
-            db.refresh(db_content)
-            return db_content
-        except Exception as e:
-            print(f"Error publishing to Twitter via Legacy API: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to publish to Twitter: {str(e)}")
             
     else:
         # Return a mock success response if keys/tokens are not configured, so UI testing can proceed

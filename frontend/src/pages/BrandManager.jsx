@@ -13,8 +13,7 @@ const BrandManager = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [newBrand, setNewBrand] = useState({ 
-    name: '', description: '', niche: '', quirks: '', persona_guidelines: '',
-    twitter_api_key: '', twitter_api_secret: '', twitter_access_token: '', twitter_access_secret: ''
+    name: '', description: '', niche: '', quirks: '', persona_guidelines: ''
   });
 
   useEffect(() => {
@@ -50,11 +49,7 @@ const BrandManager = () => {
   const handleCreateBrand = (e) => {
     e.preventDefault();
 
-    // Strip empty optional fields so they don't cause validation issues
     const payload = { ...newBrand };
-    ['twitter_api_key','twitter_api_secret','twitter_access_token','twitter_access_secret'].forEach(k => {
-      if (!payload[k]) delete payload[k];
-    });
 
     const request = isEditing
       ? api.put(`/brands/${payload.id}`, payload)
@@ -64,8 +59,7 @@ const BrandManager = () => {
       .then(() => {
         fetchBrands();
         setNewBrand({ 
-          name: '', description: '', niche: '', quirks: '', persona_guidelines: '',
-          twitter_api_key: '', twitter_api_secret: '', twitter_access_token: '', twitter_access_secret: ''
+          name: '', description: '', niche: '', quirks: '', persona_guidelines: ''
         });
         setIsEditing(false);
       })
@@ -137,67 +131,114 @@ const BrandManager = () => {
       )}
       
       {!showForm && activeBrand && (
-        <div className="p-8 rounded-2xl relative overflow-hidden"
-          style={{ background: '#0e1117', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"
-            style={{ background: 'rgba(45,212,191,0.03)' }}></div>
-          
-          <div className="relative z-10">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="text-2xl font-bold flex items-center gap-3 flex-wrap" style={{ color: '#dde1e7' }}>
-                  {activeBrand.name}
-                  {activeBrand.twitter_username ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full"
-                        style={{ background: 'rgba(45,212,191,0.12)', color: '#2dd4bf', border: '1px solid rgba(45,212,191,0.25)' }}>
-                        @{activeBrand.twitter_username} Connected
-                      </span>
-                      <button 
-                        onClick={() => handleDisconnectX(activeBrand.id)}
-                        className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all cursor-pointer"
-                      >
-                        Disconnect X
-                      </button>
-                    </div>
-                  ) : (
-                    <button 
-                      onClick={() => handleConnectX(activeBrand.id)}
-                      className="text-[10px] text-teal-400 hover:text-teal-300 font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10 transition-all cursor-pointer"
-                    >
-                      Connect X Account
-                    </button>
-                  )}
-                </h3>
-                <p className="mt-2 max-w-2xl text-sm" style={{ color: '#4a5568' }}>{activeBrand.description || 'No description provided.'}</p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Brand details */}
+          <div className="lg:col-span-2 p-8 rounded-2xl relative overflow-hidden border border-white/5 bg-[#0e1117]">
+            <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none opacity-30"
+              style={{ background: 'rgba(45,212,191,0.03)' }}></div>
+            <div className="relative z-10 space-y-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-2xl font-bold tracking-tight text-[#dde1e7]">{activeBrand.name}</h3>
+                  <p className="mt-2 text-sm text-[#4a5568]">{activeBrand.description || 'No description provided.'}</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setNewBrand(activeBrand);
+                    setIsEditing(true);
+                  }}
+                  className="px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-medium transition-all cursor-pointer border border-white/8 bg-white/4 text-[#dde1e7] hover:bg-white/8"
+                >
+                  <Edit3 size={16} /> Edit Profile
+                </button>
               </div>
-              <button 
-                onClick={() => {
-                  setNewBrand(activeBrand);
-                  setIsEditing(true);
-                }}
-                className="px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-medium transition-all"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#dde1e7' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-              >
-                <Edit3 size={16} /> Edit Profile
-              </button>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-white/5">
+                <div className="p-4 rounded-xl bg-white/2">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Niche</span>
+                  <p className="mt-2 font-medium text-[#dde1e7]">{activeBrand.niche || 'Not specified'}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-white/2">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Quirks</span>
+                  <p className="mt-2 font-medium line-clamp-3 text-[#dde1e7]">{activeBrand.quirks || 'None'}</p>
+                </div>
+                <div className="p-4 rounded-xl bg-white/2">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Persona</span>
+                  <p className="mt-2 font-medium line-clamp-3 text-[#dde1e7]">{activeBrand.persona_guidelines || 'Default'}</p>
+                </div>
+              </div>
             </div>
+          </div>
+
+          {/* X (Twitter) Connection Card */}
+          <div className="p-8 rounded-2xl relative overflow-hidden border border-white/5 bg-[#0e1117] flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none opacity-30"
+              style={{ background: 'rgba(29,161,242,0.03)' }}></div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-white/5">
-              <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Niche</span>
-                <p className="mt-2 font-medium" style={{ color: '#dde1e7' }}>{activeBrand.niche || 'Not specified'}</p>
+            <div className="relative z-10 space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-sky-500/10 border border-sky-500/20 text-sky-400">
+                    <Key size={16} />
+                  </div>
+                  <h4 className="text-sm font-bold uppercase tracking-widest text-[#dde1e7]">X Integration</h4>
+                </div>
+                {activeBrand.twitter_username ? (
+                  <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full flex items-center gap-1.5 bg-[#2dd4bf]/12 text-[#2dd4bf] border border-[#2dd4bf]/25">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></span>
+                    Connected
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                    Inactive
+                  </span>
+                )}
               </div>
-              <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Quirks</span>
-                <p className="mt-2 font-medium line-clamp-3" style={{ color: '#dde1e7' }}>{activeBrand.quirks || 'None'}</p>
-              </div>
-              <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.02)' }}>
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Persona</span>
-                <p className="mt-2 font-medium line-clamp-3" style={{ color: '#dde1e7' }}>{activeBrand.persona_guidelines || 'Default'}</p>
-              </div>
+
+              {activeBrand.twitter_username ? (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl border border-white/5 bg-white/2 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sm font-black text-sky-400">
+                      {activeBrand.twitter_username.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-bold text-[#dde1e7]">@{activeBrand.twitter_username}</h5>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">Connected via OAuth 2.0</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-[#8b949e] leading-relaxed">
+                    This brand is fully linked. The scheduling engine is authorized to manage and publish your content queue to X.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-xs text-[#8b949e] leading-relaxed">
+                    Connect your brand's X (Twitter) account to start scheduling and publishing posts. We use secure OAuth 2.0 PKCE protocol to authenticate.
+                  </p>
+                  <div className="p-4 rounded-xl border border-dashed border-slate-800 bg-white/1 flex items-center justify-center text-center">
+                    <p className="text-[10px] text-slate-600 uppercase tracking-widest font-semibold py-2">No Account Connected</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="relative z-10 pt-6">
+              {activeBrand.twitter_username ? (
+                <button 
+                  onClick={() => handleDisconnectX(activeBrand.id)}
+                  className="w-full py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 cursor-pointer border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/10"
+                >
+                  Disconnect X Account
+                </button>
+              ) : (
+                <button 
+                  onClick={() => handleConnectX(activeBrand.id)}
+                  className="w-full py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 text-[#2dd4bf] hover:bg-[#2dd4bf]/12"
+                  style={{ boxShadow: '0 4px 12px rgba(45,212,191,0.05)' }}
+                >
+                  <Key size={12} /> Connect X Account
+                </button>
+              )}
             </div>
           </div>
         </div>

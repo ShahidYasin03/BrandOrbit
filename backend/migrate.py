@@ -55,6 +55,20 @@ def run_migration():
             except sqlite3.OperationalError:
                 pass
 
+        # Add is_active column to users table
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN is_verified BOOLEAN DEFAULT 0")
+            print("Added is_verified to users table.")
+        except sqlite3.OperationalError:
+            pass
+
+        # Add is_active column to posting_plans table
+        try:
+            cursor.execute("ALTER TABLE posting_plans ADD COLUMN is_active BOOLEAN DEFAULT 1")
+            print("Added is_active to posting_plans table.")
+        except sqlite3.OperationalError:
+            pass
+
         conn.commit()
         print("Migration successful.")
     except Exception as e:
