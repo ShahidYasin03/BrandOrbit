@@ -786,10 +786,10 @@ def remove_from_queue(content_id: int, db: Session = Depends(get_db), current_us
     return db_content
 
 @app.get("/api/brands/{brand_id}/trends", response_model=List[str])
-def get_trends_for_brand(brand_id: int, db: Session = Depends(get_db)):
-    db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id).first()
+def get_trends_for_brand(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
+    db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand or not db_brand.niche:
-        return ["AI Innovations", "Remote Work Trends", "Sustainable Tech"]
+        return []
 
     niche = db_brand.niche.strip()
     cache_key = niche.lower()
@@ -885,14 +885,14 @@ Example: "Why fans are divided over the new VAR rule changes, How clubs are scou
 
     except Exception as e:
         print(f"[Trends] LLM fallback error for '{niche}': {e}")
-        # Last resort: return raw pytrends queries or hardcoded defaults
+        # Last resort: return raw pytrends queries or empty list
         if pytrends_raw:
             return pytrends_raw[:3]
-        return ["AI Innovations", "Remote Work Trends", "Sustainable Tech"]
+        return []
 
 @app.post("/api/brands/{brand_id}/generate", response_model=List[schemas.ContentItem])
-def generate_content_for_brand(brand_id: int, request: schemas.TrendGenerateRequest = None, db: Session = Depends(get_db)):
-    db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id).first()
+def generate_content_for_brand(brand_id: int, request: schemas.TrendGenerateRequest = None, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
+    db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
     if not db_brand:
         raise HTTPException(status_code=404, detail="Brand not found")
         

@@ -175,6 +175,10 @@ const ContentWorkspace = () => {
         </div>
         {isFetchingTrends ? (
           <div className="py-6 text-center text-xs animate-pulse" style={{ color: '#4a5568' }}>Analyzing niche trends...</div>
+        ) : trends.length === 0 ? (
+          <div className="py-8 text-center text-xs" style={{ color: '#4a5568' }}>
+            No brand setup or niche configured yet. Please configure your brand details in the Brand Profile page to view and analyze trending topics.
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {trends.map((trend, idx) => (
@@ -195,6 +199,7 @@ const ContentWorkspace = () => {
             ))}
           </div>
         )}
+
       </div>
 
       {/* Drafts */}
