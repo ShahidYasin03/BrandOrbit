@@ -7,6 +7,7 @@ import DashboardHome from "./pages/DashboardHome";
 import BrandManager from "./pages/BrandManager";
 import ContentWorkspace from "./pages/ContentWorkspace";
 import ScheduleEngine from './pages/ScheduleEngine';
+import AdminPanel from "./pages/AdminPanel";
 import Navbar from "./components/Navbar";
 
 // Protected Route Wrapper
@@ -23,6 +24,21 @@ const ProtectedRoute = ({ children }) => {
   
   if (!user.is_verified) {
     return <Navigate to="/verify-otp" replace />;
+  }
+  
+  return children;
+};
+
+// Admin Route Wrapper
+const AdminRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-sm" style={{ background: '#08090c', color: '#4a5568' }}>Loading...</div>;
+  }
+  
+  if (user?.role?.toUpperCase() !== "ADMIN") {
+    return <Navigate to="/dashboard" replace />;
   }
   
   return children;
@@ -125,6 +141,15 @@ function App() {
               <DashboardLayout>
                 <DashboardHome />
               </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <DashboardLayout>
+                  <AdminPanel />
+                </DashboardLayout>
+              </AdminRoute>
             </ProtectedRoute>
           } />
           <Route path="/brands" element={

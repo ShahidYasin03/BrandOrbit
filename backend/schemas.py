@@ -117,3 +117,21 @@ class ContentItem(ContentItemBase):
     
     class Config:
         from_attributes = True
+
+# Admin Panel Schemas
+class AdminUserDetail(BaseModel):
+    id: int
+    email: str
+    role: UserRoleEnum
+    is_verified: bool
+    brands: List[Brand] = []
+    
+    class Config:
+        from_attributes = True
+
+class AdminUserRoleUpdate(BaseModel):
+    role: UserRoleEnum
+
+class AdminBrandQuotaUpdate(BaseModel):
+    generations_today: int
+    posts_today: int

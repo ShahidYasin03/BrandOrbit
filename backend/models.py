@@ -26,8 +26,8 @@ class User(Base):
     role = Column(Enum(UserRoleEnum), default=UserRoleEnum.EDITOR)
     is_verified = Column(Boolean, default=False)
     
-    content_items = relationship("ContentItem", back_populates="author")
-    brands = relationship("Brand", back_populates="owner")
+    content_items = relationship("ContentItem", back_populates="author", cascade="all, delete-orphan")
+    brands = relationship("Brand", back_populates="owner", cascade="all, delete-orphan")
 
 class Brand(Base):
     __tablename__ = "brands"
@@ -59,9 +59,9 @@ class Brand(Base):
     owner_id = Column(Integer, ForeignKey("users.id"))
     
     owner = relationship("User", back_populates="brands")
-    content_items = relationship("ContentItem", back_populates="brand")
-    validation_rules = relationship("ValidationRule", back_populates="brand")
-    posting_plan = relationship("PostingPlan", back_populates="brand", uselist=False)
+    content_items = relationship("ContentItem", back_populates="brand", cascade="all, delete-orphan")
+    validation_rules = relationship("ValidationRule", back_populates="brand", cascade="all, delete-orphan")
+    posting_plan = relationship("PostingPlan", back_populates="brand", uselist=False, cascade="all, delete-orphan")
 
 class PostingPlan(Base):
     __tablename__ = "posting_plans"

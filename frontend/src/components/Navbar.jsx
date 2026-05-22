@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Target, Sparkles, LogOut, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, Target, Sparkles, LogOut, CalendarDays, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import logo from '../assets/HorizontalLogo.svg';
 
@@ -16,6 +16,10 @@ const Navbar = () => {
     { path: '/workspace', label: 'AI Workspace',   icon: Sparkles },
     { path: '/schedule',  label: 'Schedule Engine', icon: CalendarDays },
   ];
+
+  if (user?.role?.toUpperCase() === 'ADMIN') {
+    navItems.push({ path: '/admin', label: 'Admin Panel', icon: Shield });
+  }
 
   return (
     <nav

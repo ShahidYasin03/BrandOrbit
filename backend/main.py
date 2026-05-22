@@ -1124,3 +1124,181 @@ def add_validation_rule(brand_id: int, rule: schemas.ValidationRuleCreate, db: S
 @app.get("/api/brands/{brand_id}/rules", response_model=List[schemas.ValidationRule])
 def get_validation_rules(brand_id: int, db: Session = Depends(get_db)):
     return db.query(models.ValidationRule).filter(models.ValidationRule.brand_id == brand_id).all()
+
+# --- Admin Panel Endpoints ---
+
+@app.get("/api/admin/stats")
+def get_admin_stats(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_admin_user)):
+    total_users = db.query(models.User).count()
+    verified_users = db.query(models.User).filter(models.User.is_verified == True).count()
+    unverified_users = total_users - verified_users
+
+    total_brands = db.query(models.Brand).count()
+    connected_brands = db.query(models.Brand).filter(models.Brand.twitter_username != None).count()
+    disconnected_brands = total_brands - connected_brands
+
+    total_drafts = db.query(models.ContentItem).filter(models.ContentItem.status == models.StatusEnum.DRAFT).count()
+    total_scheduled = db.query(models.ContentItem).filter(models.ContentItem.status == models.StatusEnum.SCHEDULED).count()
+    total_published = db.query(models.ContentItem).filter(models.ContentItem.status == models.StatusEnum.PUBLISHED).count()
+    total_rejected = db.query(models.ContentItem).filter(models.ContentItem.status == models.StatusEnum.REJECTED).count()
+    total_pending = db.query(models.ContentItem).filter(models.ContentItem.status == models.StatusEnum.PENDING_APPROVAL).count()
+
+    # Compile actual activity timeline over the last 7 days
+    from datetime import datetime, timedelta
+    activity_timeline = []
+    now = datetime.utcnow()
+    for i in range(6, -1, -1):
+        target_day = now - timedelta(days=i)
+        start_of_day = target_day.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = target_day.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        day_published = db.query(models.ContentItem).filter(
+            models.ContentItem.status == models.StatusEnum.PUBLISHED,
+            models.ContentItem.created_at >= start_of_day,
+            models.ContentItem.created_at <= end_of_day
+        ).count()
+        
+        day_scheduled = db.query(models.ContentItem).filter(
+            models.ContentItem.status == models.StatusEnum.SCHEDULED,
+            models.ContentItem.created_at >= start_of_day,
+            models.ContentItem.created_at <= end_of_day
+        ).count()
+
+        activity_timeline.append({
+            "date": start_of_day.strftime("%b %d"),
+            "published": day_published,
+            "scheduled": day_scheduled
+        })
+
+    # Group brands by niche for diversity graph
+    niche_counts = {}
+    brands = db.query(models.Brand).all()
+    for b in brands:
+        niche = b.niche or "Uncategorized"
+        niche = niche.strip() if niche else "Uncategorized"
+        niche_counts[niche] = niche_counts.get(niche, 0) + 1
+    
+    niche_timeline = [{"niche": k, "count": v} for k, v in niche_counts.items()]
+
+    return {
+        "stats": {
+            "total_users": total_users,
+            "verified_users": verified_users,
+            "unverified_users": unverified_users,
+            "total_brands": total_brands,
+            "connected_brands": connected_brands,
+            "disconnected_brands": disconnected_brands,
+            "content": {
+                "drafts": total_drafts,
+                "scheduled": total_scheduled,
+                "published": total_published,
+                "rejected": total_rejected,
+                "pending": total_pending
+            }
+        },
+        "activity_timeline": activity_timeline,
+        "niche_timeline": niche_timeline
+    }
+
+@app.get("/api/admin/users")
+def get_admin_users(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_admin_user)):
+    users = db.query(models.User).all()
+    result = []
+    for u in users:
+        brands_data = []
+        for b in u.brands:
+            # count scheduled
+            scheduled_count = db.query(models.ContentItem).filter(
+                models.ContentItem.brand_id == b.id,
+                models.ContentItem.status == models.StatusEnum.SCHEDULED
+            ).count()
+            
+            # count published
+            published_count = db.query(models.ContentItem).filter(
+                models.ContentItem.brand_id == b.id,
+                models.ContentItem.status == models.StatusEnum.PUBLISHED
+            ).count()
+            
+            # posting plan data if exists
+            posting_plan_data = None
+            if b.posting_plan:
+                posting_plan_data = {
+                    "id": b.posting_plan.id,
+                    "active_days": b.posting_plan.active_days,
+                    "time_slots": b.posting_plan.time_slots,
+                    "volume": b.posting_plan.volume,
+                    "is_active": b.posting_plan.is_active
+                }
+                
+            brands_data.append({
+                "id": b.id,
+                "name": b.name,
+                "description": b.description,
+                "niche": b.niche,
+                "quirks": b.quirks,
+                "persona_guidelines": b.persona_guidelines,
+                "twitter_username": b.twitter_username,
+                "automation_mode": b.automation_mode,
+                "generations_today": b.generations_today,
+                "posts_today": b.posts_today,
+                "last_generation_date": b.last_generation_date.isoformat() if b.last_generation_date else None,
+                "last_post_date": b.last_post_date.isoformat() if b.last_post_date else None,
+                "created_at": b.created_at.isoformat() if b.created_at else None,
+                "scheduled_count": scheduled_count,
+                "published_count": published_count,
+                "posting_plan": posting_plan_data
+            })
+            
+        result.append({
+            "id": u.id,
+            "email": u.email,
+            "role": u.role,
+            "is_verified": u.is_verified,
+            "brands": brands_data
+        })
+    return result
+
+@app.put("/api/admin/users/{user_id}/role")
+def update_user_role(user_id: int, role_update: schemas.AdminUserRoleUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_admin_user)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if db_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot modify your own administrative role")
+
+    db_user.role = role_update.role
+    db.commit()
+    db.refresh(db_user)
+    return {"ok": True, "user_id": db_user.id, "new_role": db_user.role}
+
+@app.delete("/api/admin/users/{user_id}")
+def delete_user_profile(user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_admin_user)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if db_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own administrative profile")
+
+    db.delete(db_user)
+    db.commit()
+    return {"ok": True, "detail": "User and all associated data permanently deleted"}
+
+@app.put("/api/admin/brands/{brand_id}/quota")
+def update_brand_quota(brand_id: int, quota_update: schemas.AdminBrandQuotaUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_admin_user)):
+    db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id).first()
+    if not db_brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    db_brand.generations_today = quota_update.generations_today
+    db_brand.posts_today = quota_update.posts_today
+    db.commit()
+    db.refresh(db_brand)
+    return {
+        "ok": True, 
+        "brand_id": db_brand.id, 
+        "generations_today": db_brand.generations_today, 
+        "posts_today": db_brand.posts_today
+    }
+

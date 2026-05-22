@@ -61,3 +61,11 @@ async def get_verified_user(current_user: models.User = Depends(get_current_user
             detail="Account not verified. Please verify your OTP first."
         )
     return current_user
+
+async def get_admin_user(current_user: models.User = Depends(get_verified_user)):
+    if current_user.role != models.UserRoleEnum.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Administrative access required."
+        )
+    return current_user
