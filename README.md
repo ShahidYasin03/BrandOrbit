@@ -4,7 +4,7 @@
 [![React](https://img.shields.io/badge/Frontend-React%2019%20%2F%20Vite-61DAFB.svg?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 [![Tailwind CSS v4](https://img.shields.io/badge/Styling-Tailwind%20v4-38B2AC.svg?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Groq AI](https://img.shields.io/badge/AI-Groq%20%2F%20LLaMA%203.3-f3a536.svg?style=flat-square&logo=openai&logoColor=white)](https://groq.com)
-[![SQLite](https://img.shields.io/badge/Database-SQLite%203-003B57.svg?style=flat-square&logo=sqlite&logoColor=white)](https://sqlite.org)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791.svg?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
 BrandOrbit is a state-of-the-art, premium Content Management and Automated Scheduling system built for creators, agencies, and brands. Ditch clunky spreadsheets and outdated legacy tools. BrandOrbit integrates real-time **Google Trends detection**, advanced **Groq LLaMA-3.3-70B** content synthesis, customizable **Brand Persona & Guidelines enforcement**, **Human-in-the-loop approvals**, and automatic **Smart Scheduling** directly into a unified social publishing pipeline (connected securely via **Twitter/X OAuth 2.0 PKCE**).
@@ -35,8 +35,8 @@ graph TD
     end
 
     %% Database Subsystem
-    subgraph Storage [SQLAlchemy / SQLite]
-        N[(fyp_database_v3.db)]
+    subgraph Storage [SQLAlchemy / PostgreSQL]
+        N[(brandorbit DB)]
     end
 
     %% Interactions
@@ -104,8 +104,8 @@ The BrandOrbit backend is engineered for performance, security, and smart backgr
 *   **JWT Handshake**: Implements secure Bearer token authentication (`python-jose` with `HS256` signing) validating logins and persisting sessions securely. Tokens are issued with a default 7-day longevity.
 *   **Hashed Passwords**: User passwords are encrypted before database commitment using `passlib` context running a multi-round `bcrypt` algorithm.
 
-### 📊 Database Schema (SQLAlchemy + SQLite)
-The SQL engine is backed by a lightweight SQLite database (`fyp_database_v3.db`). The entity-relationship model consists of five key tables:
+### 📊 Database Schema (SQLAlchemy + PostgreSQL)
+The SQL engine is backed by a **PostgreSQL** database. The entity-relationship model consists of five key tables:
 
 ```
                           ┌───────────────┐
@@ -223,11 +223,6 @@ Our system incorporates absolute safety. The root `.gitignore` is structured to 
 backend/.env
 frontend/.env
 *.env
-
-# Block SQLite databases
-*.db
-*.sqlite3
-backend/fyp_database_v3.db
 ```
 API endpoints that retrieve brand configurations automatically suppress sensitive keys and hash credentials before outputting JSON to the client.
 
@@ -280,7 +275,7 @@ Final Year Project/
 ├── backend/
 │   ├── main.py              # Main FastAPI application
 │   ├── auth.py              # Auth & JWT utilities
-│   ├── database.py          # SQLAlchemy SQLite connection
+│   ├── database.py          # SQLAlchemy PostgreSQL connection
 │   ├── models.py            # Database tables
 │   ├── schemas.py           # Pydantic payloads
 │   ├── requirements.txt     # Python packages
@@ -321,10 +316,16 @@ Final Year Project/
     ```
 5.  Create a `.env` file inside the `backend` folder and populate it:
     ```env
+    DATABASE_URL=postgresql://user:password@localhost:5432/brandorbit
     SECRET_KEY=your_generated_jwt_secret
-    GROQ_API_KEY=your_groq_api_key
+    GEMINI_API_KEY=your_gemini_api_key
     TWITTER_CLIENT_ID=your_twitter_oauth2_client_id
     TWITTER_CLIENT_SECRET=your_twitter_oauth2_client_secret
+    SMTP_HOST=your_smtp_host
+    SMTP_PORT=587
+    SMTP_USER=your_smtp_user
+    SMTP_PASSWORD=your_smtp_password
+    SMTP_FROM=your_email@example.com
     ```
 6.  Start the FastAPI development server:
     ```bash

@@ -21,11 +21,9 @@ pip-log.txt
 pip-delete-this-directory.txt
 .pytest_cache/
 
-# Databases
+# Databases (never commit local DB files)
 *.db
 *.sqlite3
-backend/fyp_database_v3.db
-backend/sql_app.db
 
 # Frontend builds
 frontend/dist/
