@@ -45,7 +45,7 @@ BrandOrbit is an AI-driven, multi-brand social media content management and auto
 | **Twitter/X** | Twitter API v2 + OAuth 2.0 PKCE | Authenticated social media publishing |
 | **Background Jobs** | APScheduler (BackgroundScheduler) | Interval-based scheduled post publishing every 30s |
 | **CORS** | FastAPI CORSMiddleware | Cross-origin request handling for the React frontend |
-| **Email/OTP** | In-memory store + SMTP (Brevo) | OTP verification codes printed to server console |
+| **Email/OTP** | Built-in smtplib (Gmail SMTP) | OTP verification codes sent via email, fallback to server console |
 | **Environment** | python-dotenv | `.env` file loading |
 
 ### 1.3 High-Level Architecture Diagram
@@ -1466,11 +1466,8 @@ All configuration is loaded from `backend/.env`. The server will throw a `Runtim
 | `GROQ_API_KEY` | ❌ (preferred) | Groq API key. If present, used instead of Gemini for faster inference |
 | `TWITTER_CLIENT_ID` | ✅ (for X features) | OAuth 2.0 client ID from the Twitter Developer Portal |
 | `TWITTER_CLIENT_SECRET` | ✅ (for X features) | OAuth 2.0 client secret |
-| `SMTP_HOST` | ❌ | SMTP relay host (Brevo). OTPs currently print to terminal as fallback |
-| `SMTP_PORT` | ❌ | SMTP port (typically `587`) |
-| `SMTP_USER` | ❌ | SMTP authentication username |
-| `SMTP_PASSWORD` | ❌ | SMTP authentication password |
-| `SMTP_FROM` | ❌ | Sender email address |
+| `GMAIL_USER` | ❌ | Gmail address for sending OTPs. OTPs currently print to terminal as fallback |
+| `GMAIL_APP_PASSWORD` | ❌ | 16-character Gmail App Password (do not use regular password) |
 | `SECRET_KEY` | ❌ | JWT signing secret. Defaults to a hardcoded dev key if unset — **always override in production** |
 
 ---

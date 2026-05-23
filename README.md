@@ -235,12 +235,9 @@ GROQ_API_KEY=your_groq_api_key
 TWITTER_CLIENT_ID=your_twitter_oauth2_client_id
 TWITTER_CLIENT_SECRET=your_twitter_oauth2_client_secret
 
-# Optional — SMTP email for OTP delivery (OTPs print to terminal if unset)
-SMTP_HOST=smtp-relay.brevo.com
-SMTP_PORT=587
-SMTP_USER=your_smtp_user
-SMTP_PASSWORD=your_smtp_password
-SMTP_FROM=your_email@example.com
+# Optional — Gmail SMTP for OTP delivery (OTPs print to terminal if unset)
+GMAIL_USER=your_gmail_address@gmail.com
+GMAIL_APP_PASSWORD=your_16_character_app_password
 
 # Optional — override the default dev key in production!
 SECRET_KEY=your_openssl_rand_hex_32_output

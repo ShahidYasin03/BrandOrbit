@@ -33,6 +33,11 @@ import tweepy
 import time
 import google.generativeai as genai
 
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 # --- Trend cache: avoids hammering Google on every page load ---
 # Structure: { niche_key: { 'topics': [...], 'expires_at': timestamp } }
 _trend_cache: dict = {}
@@ -244,6 +249,59 @@ def trigger_scheduler_now():
     publish_scheduled_content()
     return {"message": "Scheduler triggered manually. Check backend logs for results."}
 
+# --- Email helper (Gmail SMTP) ---
+
+def send_otp_email(to_email: str, otp_code: str, is_resend: bool = False) -> None:
+    """
+    Sends an OTP verification email via Gmail SMTP using an App Password.
+    Falls back to printing the code to the terminal if credentials are not configured.
+    """
+    gmail_user = os.getenv("GMAIL_USER")
+    gmail_app_password = os.getenv("GMAIL_APP_PASSWORD")
+
+    subject = "Your BrandOrbit Verification Code" if not is_resend else "Your New BrandOrbit Verification Code"
+    heading = "Your new verification code" if is_resend else "Verify your account"
+
+    html_body = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 40px;">
+        <h1 style="color: #2dd4bf; font-size: 24px; margin-bottom: 8px;">&#127757; BrandOrbit</h1>
+        <p style="color: #94a3b8; margin-bottom: 32px;">AI-Driven Multi-Brand Content Platform</p>
+        <h2 style="font-size: 18px; margin-bottom: 16px;">{heading}</h2>
+        <p style="color: #94a3b8; margin-bottom: 24px;">Use the code below to verify your email address. It expires once used.</p>
+        <div style="background: #1e293b; border: 1px solid #2dd4bf; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 32px;">
+            <span style="font-size: 40px; font-weight: bold; letter-spacing: 12px; color: #2dd4bf;">{otp_code}</span>
+        </div>
+        <p style="color: #475569; font-size: 13px;">If you didn't create a BrandOrbit account, you can safely ignore this email.</p>
+    </div>
+    """
+
+    if gmail_user and gmail_app_password:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = f"BrandOrbit <{gmail_user}>"
+            msg["To"] = to_email
+            msg.attach(MIMEText(html_body, "html"))
+
+            context = ssl.create_default_context()
+            with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.login(gmail_user, gmail_app_password)
+                server.sendmail(gmail_user, to_email, msg.as_string())
+
+            print(f"[Gmail SMTP] OTP email sent to {to_email}")
+        except Exception as e:
+            print(f"[Gmail SMTP] Failed to send email to {to_email}: {e}")
+            print(f"[OTP FALLBACK] Code for {to_email}: {otp_code}")
+    else:
+        # No credentials configured — print to terminal as fallback
+        print("\n" + "="*60)
+        print(f" [OTP SERVICE] Verification Code for {to_email}: {otp_code}")
+        print(" (Set GMAIL_USER and GMAIL_APP_PASSWORD in .env to deliver via email)")
+        print("="*60 + "\n")
+
+
 # --- Auth ---
 
 @app.post("/api/auth/register", response_model=schemas.User)
@@ -258,14 +316,11 @@ def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_user)
 
-    # Generate 5-digit OTP and print to terminal
+    # Generate 5-digit OTP and deliver via Gmail SMTP (terminal fallback if not configured)
     import random
     otp_code = str(random.randint(10000, 99999))
     _otp_store[user.email] = otp_code
-    
-    print("\n" + "="*60)
-    print(f" [OTP SERVICE] Verification Code for {user.email}: {otp_code}")
-    print("="*60 + "\n")
+    send_otp_email(user.email, otp_code, is_resend=False)
 
     return db_user
 
@@ -296,7 +351,7 @@ def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="No active verification code found for this email.")
         
     if _otp_store[email] != otp:
-        raise HTTPException(status_code=400, detail="Invalid verification code. Please check your terminal console.")
+        raise HTTPException(status_code=400, detail="Invalid verification code. Please check your email inbox.")
         
     # Successful verification! We clean up the OTP
     del _otp_store[email]
@@ -315,12 +370,9 @@ def resend_otp(payload: ResendOTPRequest):
     import random
     otp_code = str(random.randint(10000, 99999))
     _otp_store[email] = otp_code
+    send_otp_email(email, otp_code, is_resend=True)
     
-    print("\n" + "="*60)
-    print(f" [OTP SERVICE - RESEND] New Code for {email}: {otp_code}")
-    print("="*60 + "\n")
-    
-    return {"status": "success", "message": "OTP resent successfully! Check your terminal console."}
+    return {"status": "success", "message": "A new verification code has been sent to your email."}
 
 @app.get("/api/users/me", response_model=schemas.User)
 def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
