@@ -1,360 +1,307 @@
 # 🪐 BrandOrbit — AI-Driven Multi-Brand Content Operations Platform
 
+<div align="center">
+
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/Frontend-React%2019%20%2F%20Vite-61DAFB.svg?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 [![Tailwind CSS v4](https://img.shields.io/badge/Styling-Tailwind%20v4-38B2AC.svg?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![Groq AI](https://img.shields.io/badge/AI-Groq%20%2F%20LLaMA%203.3-f3a536.svg?style=flat-square&logo=openai&logoColor=white)](https://groq.com)
 [![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791.svg?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![Groq AI](https://img.shields.io/badge/AI-Groq%20LLaMA%203.3-f3a536.svg?style=flat-square&logo=openai&logoColor=white)](https://groq.com)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
-BrandOrbit is a state-of-the-art, premium Content Management and Automated Scheduling system built for creators, agencies, and brands. Ditch clunky spreadsheets and outdated legacy tools. BrandOrbit integrates real-time **Google Trends detection**, advanced **Groq LLaMA-3.3-70B** content synthesis, customizable **Brand Persona & Guidelines enforcement**, **Human-in-the-loop approvals**, and automatic **Smart Scheduling** directly into a unified social publishing pipeline (connected securely via **Twitter/X OAuth 2.0 PKCE**).
+**Automate your brand's entire social media content lifecycle — from live trend detection to AI-written tweets published automatically on Twitter/X.**
+
+[📖 Backend Docs](./backend_documentation.md) · [🚀 Quick Start](#️-quick-start) · [🗺️ Architecture](#️-architecture) · [📡 API Reference](./backend_documentation.md#4-api-reference)
+
+</div>
 
 ---
 
-## 🗺️ System Architecture
+## ✨ What is BrandOrbit?
 
-The following diagram illustrates how the core components of BrandOrbit interact, from background trend detection and AI content generation to the automated schedule queue and secure publication.
+BrandOrbit is a production-ready, AI-first content management and social automation platform built as a Final Year Project. It solves the pain of manual social media management for brands and agencies by connecting:
 
-```mermaid
-graph TD
-    %% Frontend Subsystem
-    subgraph Frontend [React 19 / Vite / Tailwind v4]
-        A[Landing & Auth] -->|JWT Login| B[Dashboard Home]
-        B --> C[Brand Manager]
-        B --> D[AI Content Workspace]
-        B --> E[Schedule Engine]
-    end
-
-    %% Backend Subsystem
-    subgraph Backend [FastAPI / Python 3]
-        F[Auth Controller] -->|JWT Validation| G[Brand Controller]
-        H[Google Trends Cache] -->|Cached Topics| I[Groq AI Generator]
-        I -->|LLaMA 3.3 70B| J[Content Pipeline]
-        K[APScheduler Daemon] -->|Every 30s Poll| L[Publishing Engine]
-        L -->|Twitter OAuth 2.0 PKCE| M[Twitter/X API v2]
-    end
-
-    %% Database Subsystem
-    subgraph Storage [SQLAlchemy / PostgreSQL]
-        N[(brandorbit DB)]
-    end
-
-    %% Interactions
-    C -->|Onboard & Link X| G
-    D -->|Get Trends| H
-    D -->|Trigger Generation| I
-    E -->|Manage Slots & Cadence| J
-    J <-->|Read / Write Data| N
-    G <-->|Store Credentials| N
-    F <-->|Validate User| N
-    K -->|Query Due Slots| N
-```
+- 📡 **Live Google Trends** → detects what's buzzing in your niche right now
+- 🤖 **Groq LLaMA-3.3-70B AI** (+ Google Gemini fallback) → writes platform-optimised tweets in your brand's exact voice
+- ✅ **Human-in-the-loop approvals** → review and refine before anything goes live
+- 🗓️ **Smart scheduling engine** → auto-assigns posts to your configured calendar slots
+- 🐦 **Twitter/X API v2** → publishes automatically via OAuth 2.0 PKCE, no manual posting needed
+- ♾️ **Auto-Pilot mode** → fully autonomous end-to-end pipeline when you want it
 
 ---
 
-## 🎨 UI/UX Design System & Frontend Visuals
-
-BrandOrbit is built with a **premium dark-mode space aesthetic ("Cosmos Dashboard")**. It abandons boring layouts for dynamic, responsive, and gorgeous glassmorphic interfaces designed to delight the eyes and streamline workflows.
-
-### 🌌 Key Aesthetic Elements
-*   **Dynamic Interactive Starfield**: Powered by a custom, lightweight canvas system that generates subtle glowing stars in the background, shifting gently as you navigate.
-*   **Vector Mesh Grid Overlay**: A fine coordinate grid with elegant edge fades (`radial-gradient` and intersection masking) that gives depth and a high-tech console feeling to every dashboard screen.
-*   **Neon Teal Accent Palette (`#2dd4bf`)**: Core interactive highlights, glows, loader rings, and button borders leverage high-intensity teal that pops against deep charcoal and obsidian foundations.
-*   **Glassmorphic Floating Pill Navigation**: Navigation links sit inside a centered, floating pill navbar utilizing heavy blur filters (`backdrop-filter: blur(22px)`), dark translucent backings, and tiny white borders.
-*   **Interactive Cards with Border Glows**: Hovering over features or active days causes card borders to transition from dark obsidian to glowing teal, casting subtle soft drop shadows.
-
----
-
-### 🖥️ Page-by-Page Visual Breakdowns
-
-#### 1️⃣ Landing Page (`Landing.jsx`)
-*   **Visual Highlights**: A bold, high-impact hero header stating *"Manage your brands with AI precision"* rendered in high-contrast graphite white, sitting above a dynamic vector representation of a content performance chart.
-*   **Interactive Tiers**: Beautiful three-column pricing grid (Starter, Professional, Enterprise) styled with micro-hover translations. The Professional card is wrapped in a glowing teal halo with a custom "Most Popular" floating star badge.
-
-#### 2️⃣ Account Verification & OTP (`VerifyOTP.jsx`)
-*   **Visual Highlights**: Minimalist glassmorphic portal centering a glowing mail icon and an intuitive 5-digit code entry block. 
-*   **Interactions**: Inputs feature automatic focus-state borders that shift to soft neon teal and prompt a subtle outer box shadow as digits are typed.
-
-#### 3️⃣ Dashboard Home (`DashboardHome.jsx`)
-*   **Visual Highlights**: A high-level telemetry cockpit featuring custom analytical cards with large bold stat counters for Scheduled Posts, AI Generations, and Active Brands, complete with green trend capsules (e.g. `+27%`).
-
-#### 4️⃣ Brand Manager (`BrandManager.jsx`)
-*   **Visual Highlights**: A dual-panel interface. The left panel allows creators to specify basic brand identities (name, description, niche). The right panel features **AI Persona Tuning**, allowing managers to outline specific Brand Quirks and Guidelines.
-*   **Interactions**: Displays dynamic SUGGESTION chips (like *“Uses Gen-Z slang”*, *“Data-driven & analytical”*) which users can click to instantly append to their guidelines. It also hosts the **X Connection Status Panel** with options to initiate OAuth 2.0 PKCE authentication.
-
-#### 5️⃣ AI Content Workspace (`ContentWorkspace.jsx`)
-*   **Visual Highlights**:
-    *   **Trending Topics HUD**: Displays the latest real-time niches query outcomes in grid items, allowing users to toggle select the active trend focus.
-    *   **Replenish HUD**: Includes a large glowing **Generate via AI** button with spinning refresh icons when active.
-    *   **Draft Board**: Rendered as deep slate tiles. Each draft displays the exact content body, a character counter (`280` limit validation), and interactive buttons for inline text editing, deleting, or approving.
-    *   **Status Queue**: Lists upcoming scheduled posts in a clean timeline view showing the calculated scheduling slots.
-
-#### 6️⃣ Schedule Engine (`ScheduleEngine.jsx`)
-*   **Visual Highlights**:
-    *   **Step-by-Step Cadence Builder**: Styled step numbers (`1`, `2`, `3`) that configure Active Posting Days, Daily Time Slots (up to 3 separate times), and AI Posting Volume (Chill, Growth, Viral).
-    *   **Chronological Queue timeline**: A vertical queue displaying exactly what is "Up Next" (with a breathing teal heartbeat point) and subsequent slots, including options to eject posts back to draft.
-
----
-
-## ⚙️ Backend Architecture & Database Engine
-
-The BrandOrbit backend is engineered for performance, security, and smart background automation. Built entirely in Python using **FastAPI**, it leverages high-speed async processing and strict rate limit controls.
-
-### 🛡️ Authentication & Security
-*   **JWT Handshake**: Implements secure Bearer token authentication (`python-jose` with `HS256` signing) validating logins and persisting sessions securely. Tokens are issued with a default 7-day longevity.
-*   **Hashed Passwords**: User passwords are encrypted before database commitment using `passlib` context running a multi-round `bcrypt` algorithm.
-
-### 📊 Database Schema (SQLAlchemy + PostgreSQL)
-The SQL engine is backed by a **PostgreSQL** database. The entity-relationship model consists of five key tables:
+## 🗺️ Architecture
 
 ```
-                          ┌───────────────┐
-                          │     User      │
-                          └───────┬───────┘
-                                  │ 1
-                                  │
-                                  │ *
-                          ┌───────▼───────┐
-                          │     Brand     │◄───────────────────────┐
-                          └─┬───┬───┬───┬─┘                        │
-                            │ 1 │ 1 │ 1 │ 1                        │
-                            │   │   │   └────────────────────────┐ │
-                            │   │   │                            │ │
-  ┌───────────────┐         │   │   └───────────────┐            │ │
-  │  PostingPlan  │◄────────┘   │                   │            │ │
-  └───────────────┘ 1           │ *                 │ *          │ │ 1
-                                ▼                   ▼            │ │
-                        ┌───────────────┐   ┌───────────────┐    │ │
-                        │  ContentItem  │   │ ValidationRule│    │ │
-                        └───────┬───────┘   └───────────────┘    │ │
-                                │ *                              │ │
-                                └────────────────────────────────┘─┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         REACT FRONTEND                              │
+│              Vite · Tailwind v4 · http://localhost:5173             │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │  REST / JSON
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    FASTAPI BACKEND  :8000                           │
+│                                                                     │
+│   Auth  ·  Brand Manager  ·  Content Engine  ·  Admin Panel        │
+│                                                                     │
+│        APScheduler Daemon — publishes every 30 seconds              │
+└────────────┬─────────────────────┬──────────────────┬──────────────┘
+             │                     │                  │
+             ▼                     ▼                  ▼
+     PostgreSQL DB         Groq / Gemini         Twitter/X API v2
+      (5 Tables)           LLaMA 3.3-70B         OAuth 2.0 PKCE
+                           + pytrends
 ```
 
-#### 1. `users`
-Represents application accounts and authorization levels.
-*   `id` (Integer, PK)
-*   `email` (String, Unique, Index)
-*   `hashed_password` (String)
-*   `role` (Enum: `ADMIN`, `EDITOR`)
-
-#### 2. `brands`
-Stores brand identities, AI persona rules, rate limits, and connected API credentials.
-*   `id` (Integer, PK)
-*   `name` (String, Unique, Index)
-*   `description` (Text)
-*   `niche` (String)
-*   `quirks` (Text)
-*   `persona_guidelines` (Text)
-*   `twitter_oauth2_access_token` / `twitter_oauth2_refresh_token` (String, Encrypted OAuth 2.0 Credentials)
-*   `twitter_oauth2_token_expires_at` (DateTime)
-*   `twitter_username` (String)
-*   `automation_mode` (String: `manual`, `semi-automated`, `fully-automated`)
-*   `generations_today` / `posts_today` (Integer, Daily Rate limit tracking)
-*   `last_generation_date` / `last_post_date` (Date, Rate limit tracking reset triggers)
-*   `owner_id` (Integer, FK -> `users.id`)
-
-#### 3. `posting_plans`
-Defines scheduling boundaries and volume targets.
-*   `id` (Integer, PK)
-*   `brand_id` (Integer, FK -> `brands.id`, Unique)
-*   `active_days` (JSON Array: e.g., `["Monday", "Wednesday", "Friday"]`)
-*   `time_slots` (JSON Array: e.g., `["09:00", "17:00"]`)
-*   `volume` (String: `chill`, `growth`, `viral`)
-
-#### 4. `content_items`
-Holds content pieces, scheduled dates, and API statuses.
-*   `id` (Integer, PK)
-*   `brand_id` (Integer, FK -> `brands.id`)
-*   `body` (Text)
-*   `status` (Enum: `DRAFT`, `PENDING_APPROVAL`, `APPROVED`, `REJECTED`, `SCHEDULED`, `PUBLISHED`)
-*   `scheduled_for` (DateTime, Nullable)
-*   `tweet_id` (String, Nullable, stores published Twitter Reference ID)
-*   `author_id` (Integer, FK -> `users.id`)
-
-#### 5. `validation_rules`
-Supports automated content moderation filters.
-*   `id` (Integer, PK)
-*   `brand_id` (Integer, FK -> `brands.id`)
-*   `rule_type` (String: e.g., `forbidden_words`, `max_length`)
-*   `parameters` (JSON Object: e.g., `{"words": ["spam", "ad"]}`)
+For the full architecture, sequence diagrams, ERD, and API reference see [📖 backend_documentation.md](./backend_documentation.md).
 
 ---
 
-### 🤖 Intelligent Core Automations
+## 🎨 UI/UX Design — Cosmos Dashboard
 
-#### 1. Niche Trend Analytics Cache
-The Google Trends scraper (`pytrends`) is resource-heavy and highly prone to IP rate limits. BrandOrbit implements a custom **4-hour server-side cache (`_trend_cache`)** grouped by niche key. If a cache miss occurs, the system queries pytrends, retrieves rising Google searches, and triggers the Groq LLM to refine the raw keywords into 3 human-readable content angles.
+BrandOrbit features a **premium dark-mode space aesthetic** purpose-built to feel world-class.
 
-#### 2. Auto-Pilot Mode (`maintain_auto_queue`)
-If a brand is set to Fully-Automated (`auto` mode), a background worker automatically ensures the queue always has at least 3 scheduled items. If the count drops below 3, the engine:
-1.  Pulls existing approved drafts, OR
-2.  Triggers Groq AI to instantly synthesize new drafts aligned with the brand niche, quirks, and active trends.
-3.  Saves them and automatically slots them into the next calendar windows via `recalculate_queue`.
+| Feature | Detail |
+|---|---|
+| **Starfield Background** | Lightweight canvas system with subtle glowing parallax stars |
+| **Glassmorphic Navigation** | Floating pill navbar with `backdrop-filter: blur(22px)` and teal neon borders |
+| **Neon Teal Accent (`#2dd4bf`)** | Core interactive highlights, glows, loader rings, and active state indicators |
+| **Interactive Cards** | Border-glow transitions from dark obsidian to teal on hover |
+| **Micro-animations** | Breathing scheduler pulse, spinning generation icons, smooth status transitions |
 
-#### 3. Queue Recalculation Engine (`recalculate_queue`)
-When a new post is scheduled or a draft is approved, the system scans the brand’s `PostingPlan` (active days and daily time slots), calculates chronological availability starting from the current datetime, skips already reserved slots, and maps out dates automatically (shifting placeholder values to real execution slots).
+### Page Highlights
 
-#### 4. The APScheduler Background Daemon
-FastAPI initializes a `BackgroundScheduler` running an interval trigger **every 30 seconds**. This scheduler:
-*   Queries the `content_items` table for posts marked `SCHEDULED` whose `scheduled_for` timestamp is `<= datetime.now()`.
-*   Fetches the brand profiles and resets the daily limits if a new day has arrived.
-*   Performs rate checks (rejects publishing if the brand exceeds `3` posts a day).
-*   Checks if OAuth tokens are expired, automatically triggers a **secure Refresh Token flow** with Twitter servers, commits the refreshed credentials, and publishes the post.
+| Page | Highlights |
+|---|---|
+| **Landing** | Bold hero with dynamic content performance chart, 3-tier pricing grid with teal halo |
+| **OTP Verification** | Glassmorphic portal, 5-digit focus-chain input with teal border animation |
+| **Dashboard Home** | Telemetry cockpit — scheduled posts, AI generations, active brands with trend capsules |
+| **Brand Manager** | Dual-panel: brand identity left, AI Persona Tuning right, suggestion chip clicks, X Connection status |
+| **AI Content Workspace** | Trending Topics HUD, AI Generate button with spinner, Draft Board, Status Queue timeline |
+| **Schedule Engine** | Step-by-step cadence builder, active day grid, time slot picker, chronological queue |
+| **Admin Panel** | Platform stats, user management table, brand quota controls, activity chart |
 
 ---
 
-## 🔒 Security, Credentials & API Safety
+## ⚙️ Core Backend Systems
 
-BrandOrbit is architected around security. System keys and environment variables are strictly isolated to prevent leaks.
+### 🔐 Authentication & Security
+- **JWT Bearer tokens** (`python-jose`, HS256 algorithm) with a 7-day lifetime
+- **bcrypt password hashing** (passlib, 12 rounds) — passwords never stored in plain text
+- **OTP email verification** — accounts cannot access protected endpoints until the OTP is confirmed
+- **PKCE code verifier** — industry-standard protection against authorization code interception
 
-### 🔑 Key Requirements
-Configure a `.env` file inside the `backend` folder with these variables:
-*   `SECRET_KEY`: Used for hashing JWT tokens. Generate with `openssl rand -hex 32`.
-*   `GROQ_API_KEY`: Required to access Groq's high-speed LLaMA-3.3 models.
-*   `TWITTER_CLIENT_ID` & `TWITTER_CLIENT_SECRET`: Crucial for Twitter/X OAuth 2.0 PKCE.
-*   `TWITTER_API_KEY` & `TWITTER_API_SECRET`: Deprecated OAuth 1.0a fallback (optional).
+### 🤖 AI Content Pipeline
+- **Primary:** Groq LLaMA-3.3-70B — ultra-fast inference, brand-persona-aware prompt engineering
+- **Fallback:** Google Gemini Flash — auto-activates if Groq is unavailable
+- **Prompt injection:** Brand `niche`, `quirks`, `persona_guidelines`, and the selected trend angle are all injected into the LLM context
+- **Daily rate limit:** 4 generation runs per brand per day to prevent API cost runaway
 
-### 🛡️ Secure Git Configuration
-Our system incorporates absolute safety. The root `.gitignore` is structured to block secret exposures:
-```git
-# Block env files
-.env
-backend/.env
-frontend/.env
-*.env
+### 📡 Trend Detection
+- **pytrends** scrapes Google Trends for the brand's niche (rising queries, last 7 days)
+- The LLM then **reframes raw keywords** into compelling, human-readable content angles
+- **4-hour server-side cache** per niche prevents hitting Google's rate limits on repeated page loads
+
+### 🗓️ Smart Scheduling & Auto-Pilot
+- **`recalculate_queue()`** — walks the brand's active calendar (days + time slots) chronologically from `now()` and assigns real datetime slots to all APPROVED/SCHEDULED items in order
+- **`maintain_auto_queue()`** — if `automation_mode = "auto"` and fewer than 3 items are queued, the system auto-fetches drafts or generates new ones via the LLM
+- **APScheduler** — `BackgroundScheduler` fires every 30 seconds, picks up all items where `scheduled_for ≤ now()`, auto-refreshes OAuth tokens, publishes to Twitter, increments daily counters
+
+### 📊 Database Design — 5 Tables
+
 ```
-API endpoints that retrieve brand configurations automatically suppress sensitive keys and hash credentials before outputting JSON to the client.
-
----
-
-## 🛣️ API Endpoints Reference
-
-| HTTP Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :--- |
-| **POST** | `/api/auth/register` | Register new user profile | No |
-| **POST** | `/api/auth/login` | Authenticate user & return JWT token | No |
-| **GET** | `/api/users/me` | Fetch active user credentials | Yes (Bearer) |
-| **POST** | `/api/brands/` | Create a brand identity | Yes (Bearer) |
-| **GET** | `/api/brands/` | List all user brands | Yes (Bearer) |
-| **GET** | `/api/brands/{id}` | Retrieve detailed brand metadata | Yes (Bearer) |
-| **PUT** | `/api/brands/{id}` | Edit brand identity & AI guidelines | Yes (Bearer) |
-| **PUT** | `/api/brands/{id}/mode` | Update brand automation mode | Yes (Bearer) |
-| **GET** | `/api/brands/{id}/plan` | Fetch brand posting calendar rules | Yes (Bearer) |
-| **POST** | `/api/brands/{id}/plan` | Update brand posting calendar rules | Yes (Bearer) |
-| **GET** | `/api/brands/{id}/trends` | Retrieve real-time cache-managed niche trends | Yes (Bearer) |
-| **POST** | `/api/brands/{id}/generate` | AI-generate drafts matching current trends | Yes (Bearer) |
-| **GET** | `/api/brands/{id}/content` | Get all content items associated with a brand | Yes (Bearer) |
-| **PUT** | `/api/content/{id}` | Edit content item body | Yes (Bearer) |
-| **DELETE** | `/api/content/{id}` | Delete content item draft | Yes (Bearer) |
-| **POST** | `/api/content/{id}/submit` | Submit draft for approval | Yes (Bearer) |
-| **POST** | `/api/content/{id}/approve` | Approve draft content item | Yes (Bearer) |
-| **POST** | `/api/content/{id}/reject` | Reject draft content item | Yes (Bearer) |
-| **POST** | `/api/content/{id}/schedule` | Schedule content for specific datetime | Yes (Bearer) |
-| **POST** | `/api/content/{id}/smart_schedule` | Auto-slot content using brand posting plan | Yes (Bearer) |
-| **POST** | `/api/content/{id}/approve_and_queue`| Approve and automatically schedule into timeline | Yes (Bearer) |
-| **POST** | `/api/content/{id}/remove_queue` | Pull content item from queue back to draft | Yes (Bearer) |
-| **POST** | `/api/content/{id}/publish` | Instantly publish post to Twitter/X | Yes (Bearer) |
-| **GET** | `/api/auth/twitter/login` | Initiate Twitter OAuth 2.0 PKCE flow | Yes (Bearer) |
-| **GET** | `/api/auth/twitter/callback` | Callback for Twitter OAuth PKCE authentication | No |
-| **POST** | `/api/brands/{id}/disconnect` | Disconnect X profile and wipe tokens | Yes (Bearer) |
-
----
-
-## 🛠️ Installation & Getting Started
-
-### 📋 Prerequisites
-Ensure you have the following installed on your system:
-*   [Python 3.10+](https://www.python.org/downloads/)
-*   [Node.js v18+](https://nodejs.org/)
-*   Git
-
-### 📂 Repository Structure
+users ──(1:*)──► brands ──(1:1)──► posting_plans
+                   │
+                   ├──(1:*)──► content_items
+                   └──(1:*)──► validation_rules
 ```
-Final Year Project/
+
+All foreign key cascades are configured — deleting a user removes all their brands, content, and plans.
+
+---
+
+## 🛣️ API Quick Reference
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/auth/register` | Public | Create account |
+| `POST` | `/api/auth/login` | Public | Login, receive JWT |
+| `POST` | `/api/auth/verify-otp` | Public | Confirm OTP code |
+| `POST` | `/api/auth/resend-otp` | Public | Regenerate OTP |
+| `GET` | `/api/users/me` | Auth | Current user profile |
+| `POST` | `/api/brands/` | Verified | Create brand |
+| `GET` | `/api/brands/` | Verified | List my brands |
+| `GET` | `/api/brands/{id}` | Verified | Get brand detail |
+| `PUT` | `/api/brands/{id}` | Verified | Update brand |
+| `PUT` | `/api/brands/{id}/mode` | Verified | Set automation mode |
+| `GET` | `/api/brands/{id}/plan` | Verified | Get posting plan |
+| `POST` | `/api/brands/{id}/plan` | Verified | Save posting plan |
+| `GET` | `/api/brands/{id}/trends` | Verified | Fetch live trends |
+| `POST` | `/api/brands/{id}/generate` | Verified | AI-generate drafts |
+| `GET` | `/api/brands/{id}/content` | Verified | List all content |
+| `POST` | `/api/brands/{id}/content` | Verified | Create manual draft |
+| `PUT` | `/api/content/{id}` | Verified | Edit draft body |
+| `DELETE` | `/api/content/{id}` | Verified | Delete content |
+| `POST` | `/api/content/{id}/submit` | Verified | Submit for review |
+| `POST` | `/api/content/{id}/approve` | Verified | Approve content |
+| `POST` | `/api/content/{id}/reject` | Verified | Reject content |
+| `POST` | `/api/content/{id}/schedule` | Verified | Manual schedule |
+| `POST` | `/api/content/{id}/smart_schedule` | Verified | Auto-slot into plan |
+| `POST` | `/api/content/{id}/approve_and_queue` | Verified | Approve + schedule |
+| `POST` | `/api/content/{id}/remove_queue` | Verified | Un-schedule → Draft |
+| `POST` | `/api/content/{id}/publish` | Verified | Instant publish |
+| `GET` | `/api/auth/twitter/login` | Public | Start X OAuth flow |
+| `GET` | `/api/auth/twitter/callback` | Public | X OAuth callback |
+| `POST` | `/api/brands/{id}/disconnect` | Public | Disconnect X account |
+| `POST` | `/api/brands/{id}/rules` | Public | Add validation rule |
+| `GET` | `/api/brands/{id}/rules` | Public | List validation rules |
+| `GET` | `/api/admin/stats` | Admin | Platform statistics |
+| `GET` | `/api/admin/users` | Admin | All users + brands |
+| `PUT` | `/api/admin/users/{id}/role` | Admin | Change user role |
+| `DELETE` | `/api/admin/users/{id}` | Admin | Delete user |
+| `PUT` | `/api/admin/brands/{id}/quota` | Admin | Override daily limits |
+
+> 📖 Full request/response payloads, error codes, and examples: [backend_documentation.md](./backend_documentation.md#4-api-reference)
+
+---
+
+## 🛠️ Quick Start
+
+### Prerequisites
+
+| Tool | Version |
+|---|---|
+| Python | 3.10+ |
+| Node.js | 18+ |
+| PostgreSQL | 14+ (via pgAdmin or CLI) |
+
+### Repository Structure
+
+```
+My_FYP/
 ├── backend/
-│   ├── main.py              # Main FastAPI application
-│   ├── auth.py              # Auth & JWT utilities
-│   ├── database.py          # SQLAlchemy PostgreSQL connection
-│   ├── models.py            # Database tables
-│   ├── schemas.py           # Pydantic payloads
-│   ├── requirements.txt     # Python packages
-│   └── .env                 # Backend keys (Ignored)
+│   ├── main.py              # FastAPI application (all routes)
+│   ├── auth.py              # JWT + bcrypt utilities
+│   ├── database.py          # SQLAlchemy PostgreSQL engine
+│   ├── models.py            # ORM table definitions
+│   ├── schemas.py           # Pydantic request/response models
+│   ├── requirements.txt     # Python dependencies
+│   └── .env                 # Backend secrets (git-ignored)
 ├── frontend/
-│   ├── src/                 # React source code
-│   │   ├── components/      # Navigation & UI components
-│   │   ├── pages/           # Core workflow screens
-│   │   └── App.jsx          # Route manager
-│   ├── package.json         # JS packages
-│   └── vite.config.js       # Vite build setup
-└── README.md                # Documentation (You are here)
+│   ├── src/
+│   │   ├── components/      # Navbar, UI atoms
+│   │   ├── pages/           # Feature screens
+│   │   └── App.jsx          # Router
+│   ├── package.json
+│   └── vite.config.js
+├── backend_documentation.md # Full technical documentation
+└── README.md
 ```
 
 ---
 
-### 1️⃣ Setting Up the Backend
-1.  Navigate to the `backend` directory:
-    ```bash
-    cd backend
-    ```
-2.  Create a virtual environment:
-    ```bash
-    python -m venv venv
-    ```
-3.  Activate the virtual environment:
-    *   **Windows (PowerShell)**:
-        ```powershell
-        .\venv\Scripts\Activate.ps1
-        ```
-    *   **macOS / Linux**:
-        ```bash
-        source venv/bin/activate
-        ```
-4.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-5.  Create a `.env` file inside the `backend` folder and populate it:
-    ```env
-    DATABASE_URL=postgresql://user:password@localhost:5432/brandorbit
-    SECRET_KEY=your_generated_jwt_secret
-    GEMINI_API_KEY=your_gemini_api_key
-    TWITTER_CLIENT_ID=your_twitter_oauth2_client_id
-    TWITTER_CLIENT_SECRET=your_twitter_oauth2_client_secret
-    SMTP_HOST=your_smtp_host
-    SMTP_PORT=587
-    SMTP_USER=your_smtp_user
-    SMTP_PASSWORD=your_smtp_password
-    SMTP_FROM=your_email@example.com
-    ```
-6.  Start the FastAPI development server:
-    ```bash
-    uvicorn main:app --reload
-    ```
-    The API documentation will be available at `http://127.0.0.1:8000/docs`.
+### 1️⃣ Database Setup (PostgreSQL)
+
+1. Open **pgAdmin** and create a new database named `brandorbit`
+2. Note your connection details (host, port, user, password)
 
 ---
 
-### 2️⃣ Setting Up the Frontend
-1.  Open a new terminal and navigate to the `frontend` directory:
-    ```bash
-    cd frontend
-    ```
-2.  Install packages:
-    ```bash
-    npm install
-    ```
-3.  Start the local development server:
-    ```bash
-    npm run dev
-    ```
-4.  Open your browser and navigate to `http://localhost:5173` (or the port specified by Vite).
+### 2️⃣ Backend Setup
+
+```powershell
+# Navigate to the backend directory
+cd backend
+
+# Create and activate a virtual environment
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Install all Python dependencies
+pip install -r requirements.txt
+```
+
+Create `backend/.env` and fill in your values:
+
+```env
+# Required
+DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/brandorbit
+GEMINI_API_KEY=your_google_gemini_api_key
+
+# Recommended — for faster AI inference (falls back to Gemini if absent)
+GROQ_API_KEY=your_groq_api_key
+
+# Required for Twitter/X publishing
+TWITTER_CLIENT_ID=your_twitter_oauth2_client_id
+TWITTER_CLIENT_SECRET=your_twitter_oauth2_client_secret
+
+# Optional — SMTP email for OTP delivery (OTPs print to terminal if unset)
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_USER=your_smtp_user
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=your_email@example.com
+
+# Optional — override the default dev key in production!
+SECRET_KEY=your_openssl_rand_hex_32_output
+```
+
+Start the backend server:
+
+```powershell
+uvicorn main:app --reload
+```
+
+> ✅ API will be live at `http://127.0.0.1:8000`  
+> 📖 Interactive docs at `http://127.0.0.1:8000/docs`
+
+The database tables are created automatically on first startup via `Base.metadata.create_all(bind=engine)`.
 
 ---
 
-## 🏆 Development Team & Support
+### 3️⃣ Frontend Setup
 
-BrandOrbit was designed and developed as a Final Year Project to solve real-world AI-driven social content coordination hurdles. 
-For help, questions, or issues, please open a GitHub Issue in this repository.
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-*“Who said content management has to be boring?”* — **Launch BrandOrbit and automate with precision!**
+> ✅ App will be live at `http://localhost:5173`
+
+---
+
+## 🔒 Security Notes
+
+| Concern | Implementation |
+|---|---|
+| Passwords | Never stored — bcrypt-hashed with 12 rounds |
+| JWT Tokens | HS256-signed, 7-day expiry, validated on every protected request |
+| OAuth Tokens | Stored in DB; access tokens auto-refreshed 5 minutes before expiry |
+| PKCE | SHA-256 code challenge prevents authorization code interception |
+| Multi-tenancy | Every brand query includes `owner_id = current_user.id` filter |
+| Rate Limits | 4 AI generations/day and 3 published posts/day per brand |
+| Secret Key | Must be overridden with `openssl rand -hex 32` output in production |
+| `.env` files | All `.env` variants are git-ignored |
+
+---
+
+## 📋 Rate Limits
+
+| Resource | Limit | Reset |
+|---|---|---|
+| AI Content Generation | 4 runs / brand / day | Midnight UTC |
+| Social Publishing | 3 posts / brand / day | Midnight UTC |
+| Scheduler Poll | Every 30 seconds | N/A |
+| Trend Cache | 4-hour TTL per niche | Rolling |
+| JWT Lifetime | 7 days | On expiry |
+
+---
+
+## 🏆 Project Team
+
+BrandOrbit was designed and built as a Final Year Project to solve real-world AI-driven social content coordination challenges.
+
+For help or questions, please open a GitHub Issue.
+
+> *"Who said content management has to be boring?"* — **Launch BrandOrbit and automate with precision!**
