@@ -50,53 +50,62 @@ BrandOrbit is an AI-driven, multi-brand social media content management and auto
 
 ### 1.3 High-Level Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         REACT FRONTEND                              │
-│              Vite · Tailwind v4 · http://localhost:5173             │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │  REST / JSON over HTTP
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         FASTAPI BACKEND                             │
-│                    http://localhost:8000                             │
-│                                                                     │
-│  ┌────────────────┐  ┌─────────────────┐  ┌────────────────────┐   │
-│  │  Auth Module   │  │  Brand / Content │  │  Admin Panel       │   │
-│  │  (auth.py)     │  │  Controller      │  │  (ADMIN role only) │   │
-│  │  JWT · bcrypt  │  │  (main.py)       │  │                    │   │
-│  └────────────────┘  └─────────────────┘  └────────────────────┘   │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │              APScheduler Background Daemon (30s)             │   │
-│  │   publish_scheduled_content() → maintain_auto_queue()        │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└────────────┬───────────────────────┬──────────────────┬────────────┘
-             │                       │                  │
-             ▼                       ▼                  ▼
-┌──────────────────┐   ┌──────────────────────┐  ┌────────────────────┐
-│   POSTGRESQL DB  │   │   GROQ / GEMINI API  │  │  TWITTER/X API v2  │
-│   (pgAdmin)      │   │   LLaMA-3.3-70B      │  │  OAuth 2.0 PKCE    │
-│   5 Tables       │   │   Gemini Flash       │  │  POST /2/tweets    │
-└──────────────────┘   └──────────────────────┘  └────────────────────┘
-             │                       │
-             └─────────┬─────────────┘
-                       │
-             ┌─────────▼──────────┐
-             │  Google Trends API │
-             │  (pytrends cache)  │
-             └────────────────────┘
+```mermaid
+graph TD
+    subgraph FE["React Frontend — localhost:5173"]
+        UI["Vite · React 19 · Tailwind v4"]
+    end
+
+    subgraph BE["FastAPI Backend — localhost:8000"]
+        AUTH["Auth Module\nauth.py\nJWT · bcrypt · OTP"]
+        BRAND["Brand & Content\nController\nmain.py"]
+        ADMIN["Admin Panel\nADMIN role only"]
+        SCHED["APScheduler Daemon\nevery 30 seconds\npublish_scheduled_content()"]
+    end
+
+    subgraph EXT["External Services"]
+        DB[("PostgreSQL DB\n5 Tables")]
+        GROQ["Groq LLaMA-3.3-70B\n+ Gemini Flash Fallback"]
+        TRENDS["Google Trends\npytrends — 4hr cache"]
+        TWITTER["Twitter / X API v2\nOAuth 2.0 PKCE"]
+    end
+
+    UI -->|"REST / JSON + JWT Bearer"| AUTH
+    UI -->|"REST / JSON + JWT Bearer"| BRAND
+    UI -->|"REST / JSON + JWT Bearer"| ADMIN
+
+    AUTH -->|"SELECT / INSERT users"| DB
+    BRAND -->|"CRUD brands, content, plans"| DB
+    ADMIN -->|"Platform-wide queries"| DB
+
+    BRAND -->|"LLM prompt → 2-3 tweet drafts"| GROQ
+    BRAND -->|"niche keywords"| TRENDS
+    TRENDS -->|"rising queries"| GROQ
+
+    SCHED -->|"poll due items"| DB
+    SCHED -->|"POST /2/tweets"| TWITTER
+    SCHED -->|"refresh token if expired"| TWITTER
+    SCHED -->|"auto-generate if queue low"| GROQ
 ```
 
 ### 1.4 Data Flow — End-to-End Request Lifecycle
 
-```
-[1] React UI  ──►  HTTP Request (JWT in Authorization header)
-[2] FastAPI   ──►  CORSMiddleware validates origin
-[3] FastAPI   ──►  Depends(auth.get_verified_user) validates JWT → loads User from DB
-[4] Endpoint  ──►  SQLAlchemy ORM queries/mutates PostgreSQL via pg8000
-[5] FastAPI   ──►  Pydantic serialises response to JSON
-[6] React UI  ◄──  200 OK JSON payload
+```mermaid
+sequenceDiagram
+    participant UI as React Frontend
+    participant MW as CORS Middleware
+    participant DEP as auth.get_verified_user
+    participant EP as API Endpoint
+    participant DB as PostgreSQL
+
+    UI->>MW: HTTP Request + Authorization: Bearer token
+    MW->>DEP: Forward validated request
+    DEP->>DB: SELECT users WHERE email = token.sub
+    DB-->>DEP: User row
+    DEP->>EP: Inject verified user object
+    EP->>DB: SQLAlchemy ORM query / mutation
+    DB-->>EP: Result rows
+    EP-->>UI: 200 OK JSON (Pydantic serialised)
 ```
 
 ---
@@ -105,57 +114,70 @@ BrandOrbit is an AI-driven, multi-brand social media content management and auto
 
 ### 2.1 Entity-Relationship Diagram (ERD)
 
-```
- ┌────────────────────────────────────────────────────┐
- │                        users                        │
- │  PK  id            INTEGER                          │
- │      email         VARCHAR  UNIQUE                  │
- │      hashed_password VARCHAR                        │
- │      role          ENUM(ADMIN, EDITOR)  DEFAULT EDITOR│
- │      is_verified   BOOLEAN  DEFAULT FALSE           │
- └──────────────────────────┬─────────────────────────┘
-                            │ 1
-                            │ owner_id (FK)
-                            │ *
- ┌──────────────────────────▼─────────────────────────┐
- │                        brands                       │
- │  PK  id                     INTEGER                 │
- │      name                   VARCHAR  UNIQUE         │
- │      description            TEXT                    │
- │      niche                  VARCHAR  NULLABLE       │
- │      quirks                 TEXT  NULLABLE          │
- │      persona_guidelines     TEXT                    │
- │      twitter_oauth2_access_token  VARCHAR  NULLABLE │
- │      twitter_oauth2_refresh_token VARCHAR  NULLABLE │
- │      twitter_oauth2_token_expires_at DATETIME NULL  │
- │      twitter_username       VARCHAR  NULLABLE       │
- │      twitter_oauth_state    VARCHAR  NULLABLE       │
- │      twitter_oauth_code_verifier   VARCHAR  NULLABLE│
- │      automation_mode        VARCHAR  DEFAULT manual  │
- │      generations_today      INTEGER  DEFAULT 0      │
- │      last_generation_date   DATE  NULLABLE          │
- │      posts_today            INTEGER  DEFAULT 0      │
- │      last_post_date         DATE  NULLABLE          │
- │      created_at             DATETIME  DEFAULT now() │
- │  FK  owner_id               → users.id             │
- └──────┬─────────┬─────────────┬────────────────────-┘
-        │ 1       │ 1           │ 1
-        │         │             │
-        │ *       │ *           │ 1
- ┌──────▼──────┐ ┌▼───────────┐ ┌▼─────────────────────┐
- │content_items│ │validation  │ │    posting_plans       │
- │             │ │  _rules    │ │                        │
- │ PK id INT   │ │PK id INT   │ │ PK id INT              │
- │ brand_id FK │ │brand_id FK │ │ brand_id FK (UNIQUE)   │
- │ body TEXT   │ │rule_type   │ │ active_days  JSON      │
- │ status ENUM │ │  VARCHAR   │ │ time_slots   JSON      │
- │ scheduled_  │ │parameters  │ │ volume       VARCHAR   │
- │  for  DT    │ │  JSON      │ │ is_active    BOOLEAN   │
- │ tweet_id    │ └────────────┘ └────────────────────────┘
- │  VARCHAR    │
- │ created_at  │
- │ author_id FK│
- └─────────────┘
+```mermaid
+erDiagram
+    users {
+        int id PK
+        varchar email UK
+        varchar hashed_password
+        enum role "ADMIN or EDITOR"
+        boolean is_verified
+    }
+
+    brands {
+        int id PK
+        varchar name UK
+        text description
+        varchar niche
+        text quirks
+        text persona_guidelines
+        varchar twitter_oauth2_access_token
+        varchar twitter_oauth2_refresh_token
+        datetime twitter_oauth2_token_expires_at
+        varchar twitter_username
+        varchar twitter_oauth_state
+        varchar twitter_oauth_code_verifier
+        varchar automation_mode
+        int generations_today
+        date last_generation_date
+        int posts_today
+        date last_post_date
+        datetime created_at
+        int owner_id FK
+    }
+
+    posting_plans {
+        int id PK
+        int brand_id FK
+        json active_days
+        json time_slots
+        varchar volume
+        boolean is_active
+    }
+
+    content_items {
+        int id PK
+        int brand_id FK
+        text body
+        enum status "DRAFT PENDING_APPROVAL APPROVED SCHEDULED PUBLISHED REJECTED"
+        datetime scheduled_for
+        varchar tweet_id
+        datetime created_at
+        int author_id FK
+    }
+
+    validation_rules {
+        int id PK
+        int brand_id FK
+        varchar rule_type
+        json parameters
+    }
+
+    users ||--o{ brands : "owns"
+    users ||--o{ content_items : "authors"
+    brands ||--o| posting_plans : "has"
+    brands ||--o{ content_items : "contains"
+    brands ||--o{ validation_rules : "enforces"
 ```
 
 **Cascade Rules:**
@@ -232,15 +254,20 @@ BrandOrbit is an AI-driven, multi-brand social media content management and auto
 
 **Content Status Transitions:**
 
-```
-         ┌─────────────────────────────────────────────────┐
-         │                                                 ▼
-[DRAFT] ──► [PENDING_APPROVAL] ──► [APPROVED] ──► [SCHEDULED] ──► [PUBLISHED]
-   │                  │                 │
-   │                  ▼                 │
-   └──────────────► [REJECTED] ◄────────┘
-   ▲
-   └── remove_queue() reverts SCHEDULED → DRAFT
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT : AI Generate or Manual Create
+    DRAFT --> PENDING_APPROVAL : submit()
+    DRAFT --> APPROVED : approve() direct
+    DRAFT --> DRAFT : remove_queue() reverts
+    PENDING_APPROVAL --> APPROVED : approve()
+    PENDING_APPROVAL --> REJECTED : reject()
+    APPROVED --> SCHEDULED : smart_schedule() or approve_and_queue()
+    SCHEDULED --> PUBLISHED : APScheduler fires
+    SCHEDULED --> PUBLISHED : publish() instant
+    SCHEDULED --> DRAFT : remove_queue()
+    PUBLISHED --> [*]
+    REJECTED --> [*]
 ```
 
 ---
@@ -260,50 +287,62 @@ BrandOrbit is an AI-driven, multi-brand social media content management and auto
 
 ### 3.1 Use Case Diagram
 
-```
-                    ┌─────────────────────────────────────────────┐
-                    │              BrandOrbit System               │
-                    │                                             │
-  ┌──────────┐      │  ┌─────────────────────────────────────┐   │
-  │          │      │  │         Authentication               │   │
-  │  PUBLIC  │─────►│  │  Register Account                   │   │
-  │  (Guest) │      │  │  Log In                             │   │
-  │          │      │  └─────────────────────────────────────┘   │
-  └──────────┘      │                                             │
-                    │  ┌─────────────────────────────────────┐   │
-  ┌──────────┐      │  │         Editor Capabilities          │   │
-  │          │─────►│  │  Verify OTP                         │   │
-  │  EDITOR  │      │  │  Create / Edit / Delete Brand       │   │
-  │  (User)  │      │  │  Configure AI Persona & Guidelines  │   │
-  │          │      │  │  Connect X Account (OAuth PKCE)     │   │
-  └──────────┘      │  │  Fetch Niche Trends                 │   │
-                    │  │  Generate AI Content                │   │
-                    │  │  Edit / Delete Draft Content        │   │
-                    │  │  Submit Content for Approval        │   │
-                    │  │  Approve / Reject Content           │   │
-                    │  │  Smart-Schedule Content             │   │
-                    │  │  Remove Content from Queue          │   │
-                    │  │  Set Automation Mode                │   │
-                    │  │  Configure Posting Plan             │   │
-                    │  │  Disconnect X Account               │   │
-                    │  └─────────────────────────────────────┘   │
-                    │                                             │
-  ┌──────────┐      │  ┌─────────────────────────────────────┐   │
-  │          │─────►│  │      Admin-Only Capabilities         │   │
-  │  ADMIN   │      │  │  View Platform Stats Dashboard      │   │
-  │  (User)  │      │  │  List All Users                     │   │
-  │          │      │  │  Change User Role (EDITOR ↔ ADMIN)  │   │
-  │          │      │  │  Delete User (cascades all data)    │   │
-  │          │      │  │  Override Brand Quota Counters      │   │
-  └──────────┘      │  └─────────────────────────────────────┘   │
-                    │                                             │
-  ┌──────────┐      │  ┌─────────────────────────────────────┐   │
-  │          │      │  │      Background Daemon               │   │
-  │SCHEDULER │─────►│  │  Auto-Publish Scheduled Posts       │   │
-  │(System)  │      │  │  Auto-Refresh OAuth Tokens          │   │
-  │          │      │  │  Auto-Replenish Content Queue       │   │
-  └──────────┘      │  └─────────────────────────────────────┘   │
-                    └─────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    PUBLIC(["🌐 Public Guest"])
+    EDITOR(["👤 Editor User"])
+    ADMIN(["👑 Admin User"])
+    DAEMON(["⚙️ APScheduler Daemon"])
+
+    subgraph AUTH["Authentication"]
+        UC1["Register Account"]
+        UC2["Log In"]
+        UC3["Verify OTP"]
+        UC4["Resend OTP"]
+    end
+
+    subgraph BRAND_MGT["Brand Management"]
+        UC5["Create / Edit / Delete Brand"]
+        UC6["Configure AI Persona & Guidelines"]
+        UC7["Connect X Account via OAuth PKCE"]
+        UC8["Set Automation Mode"]
+        UC9["Disconnect X Account"]
+    end
+
+    subgraph CONTENT["Content Lifecycle"]
+        UC10["Fetch Niche Trends"]
+        UC11["Generate AI Content"]
+        UC12["Edit / Delete Draft"]
+        UC13["Submit for Approval"]
+        UC14["Approve / Reject Content"]
+        UC15["Smart-Schedule Content"]
+        UC16["Remove from Queue"]
+        UC17["Configure Posting Plan"]
+    end
+
+    subgraph ADMIN_PANEL["Admin Panel"]
+        UC18["View Platform Stats"]
+        UC19["List All Users"]
+        UC20["Change User Role"]
+        UC21["Delete User"]
+        UC22["Override Brand Quotas"]
+    end
+
+    subgraph DAEMON_JOBS["Background Automation"]
+        UC23["Auto-Publish Scheduled Posts"]
+        UC24["Auto-Refresh OAuth Tokens"]
+        UC25["Auto-Replenish Content Queue"]
+    end
+
+    PUBLIC --> AUTH
+    EDITOR --> AUTH
+    EDITOR --> BRAND_MGT
+    EDITOR --> CONTENT
+    ADMIN --> AUTH
+    ADMIN --> BRAND_MGT
+    ADMIN --> CONTENT
+    ADMIN --> ADMIN_PANEL
+    DAEMON --> DAEMON_JOBS
 ```
 
 ---
@@ -312,116 +351,147 @@ BrandOrbit is an AI-driven, multi-brand social media content management and auto
 
 #### 3.2.1 User Registration & OTP Verification
 
-```
-User         Frontend          Backend (FastAPI)       PostgreSQL DB
- │                │                    │                     │
- │──POST /register►│                   │                     │
- │                │──POST /api/auth/register──►│             │
- │                │                    │──INSERT users ─────►│
- │                │                    │◄── user record ──────│
- │                │                    │  Generate 5-digit OTP│
- │                │                    │  Store in _otp_store │
- │                │                    │  PRINT to terminal   │
- │                │◄── 201 User JSON ──│                     │
- │                │                    │                     │
- │  [Sees OTP in terminal / email]      │                     │
- │──Enter OTP ───►│                    │                     │
- │                │──POST /api/auth/verify-otp──►│           │
- │                │                    │  Lookup _otp_store   │
- │                │                    │──UPDATE users.is_verified=TRUE►│
- │                │◄── 200 {status: success} ──│             │
- │◄── Redirect to Login ──│            │                     │
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as Frontend
+    participant BE as FastAPI Backend
+    participant DB as PostgreSQL
+
+    User->>FE: Fill registration form
+    FE->>BE: POST /api/auth/register
+    BE->>DB: INSERT INTO users (email, hashed_password)
+    DB-->>BE: New user row
+    BE->>BE: Generate 5-digit OTP
+    BE->>BE: Store OTP in _otp_store dict
+    Note over BE: OTP printed to server terminal
+    BE-->>FE: 201 User JSON (is_verified=false)
+    FE-->>User: Redirect to OTP verification screen
+
+    User->>FE: Enter OTP code
+    FE->>BE: POST /api/auth/verify-otp
+    BE->>BE: Lookup email in _otp_store
+    alt OTP matches
+        BE->>DB: UPDATE users SET is_verified=TRUE
+        BE-->>FE: 200 {status: success}
+        FE-->>User: Redirect to Login
+    else OTP wrong or not found
+        BE-->>FE: 400 Invalid verification code
+    end
 ```
 
 #### 3.2.2 Login & JWT Issuance
 
-```
-User         Frontend          Backend (FastAPI)       PostgreSQL DB
- │                │                    │                     │
- │──POST /login ─►│                   │                     │
- │                │──POST /api/auth/login (form-data)──►│   │
- │                │                    │──SELECT users WHERE email=? ──►│
- │                │                    │◄── user row ─────────│
- │                │                    │  bcrypt.verify(password, hash)│
- │                │                    │  [FAIL] ──► 400 Incorrect cred│
- │                │                    │  [PASS] ──► Sign JWT (7 days) │
- │                │◄── 200 {access_token, token_type: bearer} ──│
- │  Store token   │                    │                     │
- │  in memory     │                    │                     │
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as Frontend
+    participant BE as FastAPI Backend
+    participant DB as PostgreSQL
+
+    User->>FE: Submit email + password
+    FE->>BE: POST /api/auth/login (form-urlencoded)
+    BE->>DB: SELECT * FROM users WHERE email = ?
+    DB-->>BE: User row
+    alt Password valid
+        BE->>BE: bcrypt.verify(password, hashed_password)
+        BE->>BE: Sign JWT HS256 — expires in 7 days
+        BE-->>FE: 200 {access_token, token_type: bearer}
+        FE->>FE: Store token in memory
+    else Invalid credentials
+        BE-->>FE: 400 Incorrect email or password
+    end
 ```
 
 #### 3.2.3 Twitter/X OAuth 2.0 PKCE Flow
 
-```
-User     Frontend      Backend (FastAPI)     Twitter/X API      PostgreSQL
- │            │                 │                   │                │
- │─Connect X ►│                │                   │                │
- │            │──GET /api/auth/twitter/login?brand_id=N──►│         │
- │            │                 │  Generate PKCE pair                │
- │            │                 │  (verifier + S256 challenge)       │
- │            │                 │  Generate CSRF state nonce         │
- │            │                 │──UPDATE brands SET state, verifier►│
- │            │◄── {auth_url} ──│                   │                │
- │            │                 │                   │                │
- │◄── Redirect to Twitter/X ───►│                   │                │
- │──Authorise App ──────────────────────────────────►│               │
- │                                                   │               │
- │◄── Redirect to /api/auth/twitter/callback?code=X&state=Y ─────────│
- │            │                 │                   │                │
- │            │                 │  Validate state matches DB record  │
- │            │                 │──POST /2/oauth2/token (code+verifier)►│
- │            │                 │◄── {access_token, refresh_token, expires_in}─│
- │            │                 │──GET /2/users/me ─────────────────►│
- │            │                 │◄── {data: {username: "XHandle"}} ──│
- │            │                 │──UPDATE brands (tokens, username, clear PKCE)►│
- │◄── Redirect to /brands?oauth=success&username=XHandle ─────────────│
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as Frontend
+    participant BE as FastAPI Backend
+    participant DB as PostgreSQL
+    participant TW as Twitter/X API
+
+    User->>FE: Click "Connect X Account"
+    FE->>BE: GET /api/auth/twitter/login?brand_id=N
+    BE->>BE: Generate PKCE verifier + S256 challenge
+    BE->>BE: Generate CSRF state nonce
+    BE->>DB: UPDATE brands SET oauth_state, code_verifier
+    BE-->>FE: {auth_url}
+    FE-->>User: Redirect browser to Twitter/X
+
+    User->>TW: Authorise BrandOrbit app
+    TW-->>BE: Redirect to /api/auth/twitter/callback?code=X&state=Y
+
+    BE->>DB: SELECT brand WHERE twitter_oauth_state = Y
+    BE->>TW: POST /2/oauth2/token (code + code_verifier)
+    TW-->>BE: {access_token, refresh_token, expires_in}
+    BE->>TW: GET /2/users/me
+    TW-->>BE: {data: {username: "XHandle"}}
+    BE->>DB: UPDATE brands SET tokens, username, clear PKCE fields
+    BE-->>User: Redirect to /brands?oauth=success&username=XHandle
 ```
 
 #### 3.2.4 AI Content Generation
 
-```
-User       Frontend       Backend (FastAPI)     Groq / Gemini     Google Trends
- │               │                  │                  │                │
- │─Generate ────►│                 │                  │                │
- │               │──POST /api/brands/{id}/generate {trend: "..."}──►│  │
- │               │                  │  Check ownership                  │
- │               │                  │  Check niche is configured        │
- │               │                  │  Check generations_today < 4      │
- │               │                  │──[Build LLM prompt with brand     │
- │               │                  │   persona, niche, quirks, trend]  │
- │               │                  │──chat.completions.create() ──────►│
- │               │                  │  [FAIL] ──► Fallback Gemini ──────│──►│
- │               │                  │◄── 2-3 posts split by "|||" ──────│   │
- │               │                  │  Parse & INSERT content_items     │
- │               │                  │  Increment generations_today      │
- │               │                  │  Run maintain_auto_queue()        │
- │               │◄── 201 [ContentItem, ...] ──│                        │
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as Frontend
+    participant BE as FastAPI Backend
+    participant DB as PostgreSQL
+    participant GROQ as Groq LLaMA
+    participant GEM as Gemini Flash
+
+    User->>FE: Click Generate with trend selected
+    FE->>BE: POST /api/brands/{id}/generate {trend: "..."}
+    BE->>DB: Verify brand ownership + load brand
+    BE->>BE: Check niche is set
+    BE->>BE: Check generations_today < 4
+    BE->>BE: Build LLM prompt with niche, quirks, guidelines, trend
+
+    BE->>GROQ: chat.completions.create(prompt)
+    alt Groq succeeds
+        GROQ-->>BE: 2-3 posts separated by "|||"
+    else Groq fails
+        BE->>GEM: generate_content(prompt)
+        GEM-->>BE: 2-3 posts separated by "|||"
+    end
+
+    BE->>DB: INSERT content_items (status=DRAFT)
+    BE->>DB: UPDATE brands SET generations_today += 1
+    BE->>BE: maintain_auto_queue()
+    BE-->>FE: 201 Array of ContentItem objects
+    FE-->>User: Show new drafts in Draft Board
 ```
 
 #### 3.2.5 Token Auto-Refresh During Publishing
 
-```
-Scheduler (APScheduler)      Backend (get_valid_twitter_token)      Twitter API
-        │                                    │                           │
-        │  item.scheduled_for <= now()        │                           │
-        │──Call get_valid_twitter_token() ──►│                           │
-        │                                    │  Check expires_at - 5min  │
-        │                                    │  [FRESH] ──► return token │
-        │                                    │                           │
-        │                                    │  [EXPIRED] ──►            │
-        │                                    │──POST /2/oauth2/token     │
-        │                                    │  grant_type: refresh_token│
-        │                                    │  Basic Auth: client creds ├──►│
-        │                                    │◄── {new_access_token,     │   │
-        │                                    │     refresh_token,         │   │
-        │                                    │     expires_in}           │◄──│
-        │                                    │  UPDATE brands table      │
-        │◄── valid access_token ─────────────│                           │
-        │──POST /2/tweets {text: body} ──────────────────────────────►   │
-        │◄── 201 {data: {id: "tweet_id"}} ──────────────────────────── ◄─│
-        │  UPDATE content_items SET status=PUBLISHED, tweet_id=...       │
-        │  INCREMENT posts_today                                          │
-        │  Run maintain_auto_queue()                                      │
+```mermaid
+sequenceDiagram
+    participant SCH as APScheduler
+    participant BE as get_valid_twitter_token
+    participant DB as PostgreSQL
+    participant TW as Twitter/X API
+
+    SCH->>BE: item.scheduled_for <= now() — call get_valid_twitter_token()
+    BE->>BE: Check expires_at minus 5 minutes
+
+    alt Token is fresh
+        BE-->>SCH: Return valid access_token
+    else Token expired or expiring soon
+        BE->>TW: POST /2/oauth2/token grant_type=refresh_token
+        TW-->>BE: {new_access_token, refresh_token, expires_in}
+        BE->>DB: UPDATE brands SET new tokens + expires_at
+        BE-->>SCH: Return new access_token
+    end
+
+    SCH->>TW: POST /2/tweets {text: item.body}
+    TW-->>SCH: 201 {data: {id: tweet_id}}
+    SCH->>DB: UPDATE content_items SET status=PUBLISHED, tweet_id=...
+    SCH->>DB: UPDATE brands SET posts_today += 1
+    SCH->>SCH: maintain_auto_queue()
 ```
 
 ---
@@ -430,151 +500,69 @@ Scheduler (APScheduler)      Backend (get_valid_twitter_token)      Twitter API
 
 #### 3.3.1 APScheduler Auto-Pilot Daemon (Every 30 Seconds)
 
-```
-                    ┌─────────────────────────────┐
-                    │  APScheduler fires (30s)     │
-                    └──────────────┬──────────────┘
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │  Query SCHEDULED items       │
-                    │  WHERE scheduled_for <= now()│
-                    └──────────────┬──────────────┘
-                                   ▼
-                    ┌─────────────────────────────┐
-                    │  No items due?               │
-                    └──────────────┬──────────────┘
-                          YES ─────┘     NO
-                           │              ▼
-                           │  ┌───────────────────────────┐
-                           │  │  For each due item:        │
-                           │  └───────────┬───────────────┘
-                           │              ▼
-                           │  ┌───────────────────────────┐
-                           │  │  Load brand               │
-                           │  │  Brand found?             │
-                           │  └───────────┬───────────────┘
-                           │         NO ──┘   YES
-                           │               ▼
-                           │  ┌───────────────────────────┐
-                           │  │  PostingPlan.is_active?   │
-                           │  └───────────┬───────────────┘
-                           │  INACTIVE ───┘  ACTIVE
-                           │                   ▼
-                           │  ┌───────────────────────────┐
-                           │  │  New day? Reset            │
-                           │  │  posts_today = 0           │
-                           │  └───────────┬───────────────┘
-                           │              ▼
-                           │  ┌───────────────────────────┐
-                           │  │  posts_today >= 3?         │
-                           │  └───────────┬───────────────┘
-                           │     YES ─────┘  NO
-                           │                   ▼
-                           │  ┌───────────────────────────┐
-                           │  │  get_valid_twitter_token() │
-                           │  │  (auto-refresh if expired) │
-                           │  └───────────┬───────────────┘
-                           │              ▼
-                           │  ┌───────────────────────────┐
-                           │  │  OAuth token available?   │
-                           │  └──────┬────────────────────┘
-                           │    YES  │          NO
-                           │         ▼           ▼
-                           │  POST /2/tweets  Mock publish
-                           │  Twitter API v2  (UI testing)
-                           │         │           │
-                           │         ▼           ▼
-                           │  ┌───────────────────────────┐
-                           │  │  Status=PUBLISHED          │
-                           │  │  posts_today += 1          │
-                           │  │  maintain_auto_queue()     │
-                           │  └───────────────────────────┘
-                           │
-                    ◄──────┘
-                 (Return / sleep until next 30s interval)
+```mermaid
+flowchart TD
+    A(["APScheduler fires every 30s"]) --> B["Query SCHEDULED items\nWHERE scheduled_for <= now()"]
+    B --> C{"Items due?"}
+    C -->|No| Z(["Return — wait for next interval"])
+    C -->|Yes| D["For each due item"]
+    D --> E{"Brand exists?"}
+    E -->|No| D
+    E -->|Yes| F{"PostingPlan\nis_active?"}
+    F -->|Inactive| D
+    F -->|Active| G{"New day?"}
+    G -->|Yes| H["Reset posts_today = 0"]
+    G -->|No| I{"posts_today >= 3?"}
+    H --> I
+    I -->|Yes — daily limit hit| D
+    I -->|No| J["get_valid_twitter_token()\nauto-refresh if expired"]
+    J --> K{"OAuth token\navailable?"}
+    K -->|Yes| L["POST /2/tweets\nTwitter API v2"]
+    K -->|No| M["Mock publish\nfor UI testing"]
+    L --> N{"Twitter\nreturns 201?"}
+    N -->|Yes| O["tweet_id stored"]
+    N -->|No| P["tweet_id = failed:status_code"]
+    O --> Q["status = PUBLISHED\nposts_today += 1\nmaintain_auto_queue()"]
+    M --> Q
+    P --> D
+    Q --> D
 ```
 
 #### 3.3.2 `maintain_auto_queue()` — Auto-Pilot Queue Replenishment
 
-```
-              ┌────────────────────────────────┐
-              │  maintain_auto_queue(brand_id) │
-              └───────────────┬────────────────┘
-                              ▼
-              ┌────────────────────────────────┐
-              │  Brand automation_mode = auto? │
-              └───────────────┬────────────────┘
-                   NO ────────┘   YES
-                    │               ▼
-                    │  ┌────────────────────────────────┐
-                    │  │  Count SCHEDULED items          │
-                    │  │  needed = 3 - queued_count      │
-                    │  └───────────────┬────────────────┘
-                    │          needed <= 0?
-                    │     YES ─────────┘   NO
-                    │      │                ▼
-                    │      │  ┌────────────────────────────────┐
-                    │      │  │  Fetch up to 'needed' DRAFTs   │
-                    │      │  │  (oldest first)                │
-                    │      │  └───────────────┬────────────────┘
-                    │      │         len(drafts) < needed?
-                    │      │     YES ──────────┘   NO
-                    │      │      │                │
-                    │      │      ▼                │
-                    │      │  _trigger_ai_generation()
-                    │      │  [LLM generates new drafts]
-                    │      │      │                │
-                    │      │      └──────────┬─────┘
-                    │      │                 ▼
-                    │      │  ┌────────────────────────────────┐
-                    │      │  │  Set each draft → SCHEDULED    │
-                    │      │  │  (placeholder date +365d)      │
-                    │      │  │  recalculate_queue()           │
-                    │      │  │  (assigns real calendar slots) │
-                    │      │  └────────────────────────────────┘
-                    │      │
-                    └──────┘  (Return)
+```mermaid
+flowchart TD
+    A(["maintain_auto_queue called"]) --> B{"automation_mode\n= auto?"}
+    B -->|No| Z(["Return — nothing to do"])
+    B -->|Yes| C["Count SCHEDULED items\nneeded = 3 - queued_count"]
+    C --> D{"needed <= 0?"}
+    D -->|Yes — queue is full| Z
+    D -->|No| E["Fetch up to 'needed' oldest\nDRAFT or PENDING_APPROVAL items"]
+    E --> F{"len drafts < needed?"}
+    F -->|Yes — not enough drafts| G["_trigger_ai_generation()\nLLM generates new drafts"]
+    F -->|No| H
+    G --> H["Combine existing + new drafts"]
+    H --> I["Set each draft → SCHEDULED\nscheduled_for = now + 365d placeholder"]
+    I --> J["recalculate_queue()\nAssigns real calendar slots"]
+    J --> Z
 ```
 
 #### 3.3.3 `recalculate_queue()` — Calendar Slot Assignment
 
-```
-         ┌──────────────────────────────────┐
-         │  recalculate_queue(brand_id)     │
-         └─────────────────┬────────────────┘
-                           ▼
-         ┌──────────────────────────────────┐
-         │  Load PostingPlan                │
-         │  Load all SCHEDULED + APPROVED   │
-         │  items for brand                 │
-         └─────────────────┬────────────────┘
-                           ▼
-         ┌──────────────────────────────────┐
-         │  No plan OR no active_days OR    │
-         │  no time_slots?                  │
-         └─────────────────┬────────────────┘
-             YES ──────────┘   NO
-              │                  ▼
-              │  ┌──────────────────────────────────┐
-              │  │  Build chronological slot list   │
-              │  │  starting from now()             │
-              │  │  Walk days forward:              │
-              │  │    If weekday in active_days:    │
-              │  │      For each time_slot:         │
-              │  │        If slot > now(): add it   │
-              │  │  Until len(slots)>=len(items)    │
-              │  └──────────────────┬───────────────┘
-              │                     ▼
-              │  ┌──────────────────────────────────┐
-              │  │  Assign slot[i] to item[i]       │
-              │  │  Set status = SCHEDULED          │
-              │  │  Commit to DB                    │
-              │  └──────────────────────────────────┘
-              │
- Revert items │
- to APPROVED  │
- scheduled=NULL│
-              └──► COMMIT, RETURN
+```mermaid
+flowchart TD
+    A(["recalculate_queue called"]) --> B["Load PostingPlan\nLoad all SCHEDULED + APPROVED items"]
+    B --> C{"No plan OR\nno active_days OR\nno time_slots?"}
+    C -->|Yes — no valid schedule| D["Revert all items to APPROVED\nSet scheduled_for = NULL"]
+    D --> E(["COMMIT and return"])
+    C -->|No — plan exists| F{"No items\nto schedule?"}
+    F -->|Yes| E
+    F -->|No| G["Build slot list starting from now()\nWalk days forward chronologically"]
+    G --> H["For each day: if weekday in active_days\nFor each time_slot: if slot > now() → add"]
+    H --> I{"len slots >= len items?"}
+    I -->|No — keep walking| H
+    I -->|Yes| J["Assign slots[i] to items[i]\nSet status = SCHEDULED"]
+    J --> E
 ```
 
 ---
