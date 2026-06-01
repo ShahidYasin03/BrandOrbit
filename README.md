@@ -11,7 +11,7 @@
 
 **Automate your brand's entire social media content lifecycle — from live trend detection to AI-written tweets published automatically on Twitter/X.**
 
-[📖 Backend Docs](./backend_documentation.md) · [🚀 Quick Start](#️-quick-start) · [🗺️ Architecture](#️-architecture) · [📡 API Reference](./backend_documentation.md#4-api-reference)
+[📖 Backend Docs](./backend_documentation.md) · [💻 Frontend Docs](./frontend_documentation.md) · [🚀 Quick Start](#️-quick-start) · [🗺️ Architecture](#️-architecture) · [📡 API Reference](./backend_documentation.md#12-api-endpoints-reference)
 
 </div>
 
@@ -53,7 +53,7 @@ BrandOrbit is a production-ready, AI-first content management and social automat
                            + pytrends
 ```
 
-For the full architecture, sequence diagrams, ERD, and API reference see [📖 backend_documentation.md](./backend_documentation.md).
+For the full architecture, sequence diagrams, ERD, and API reference see [📖 backend_documentation.md](./backend_documentation.md) and [💻 frontend_documentation.md](./frontend_documentation.md).
 
 ---
 
@@ -161,7 +161,7 @@ All foreign key cascades are configured — deleting a user removes all their br
 | `DELETE` | `/api/admin/users/{id}` | Admin | Delete user |
 | `PUT` | `/api/admin/brands/{id}/quota` | Admin | Override daily limits |
 
-> 📖 Full request/response payloads, error codes, and examples: [backend_documentation.md](./backend_documentation.md#4-api-reference)
+> 📖 Full request/response payloads, error codes, and examples: [backend_documentation.md](./backend_documentation.md#12-api-endpoints-reference)
 
 ---
 
@@ -180,22 +180,40 @@ All foreign key cascades are configured — deleting a user removes all their br
 ```
 My_FYP/
 ├── backend/
-│   ├── main.py              # FastAPI application (all routes)
-│   ├── auth.py              # JWT + bcrypt utilities
-│   ├── database.py          # SQLAlchemy PostgreSQL engine
-│   ├── models.py            # ORM table definitions
-│   ├── schemas.py           # Pydantic request/response models
-│   ├── requirements.txt     # Python dependencies
-│   └── .env                 # Backend secrets (git-ignored)
+│   ├── main.py                 # FastAPI application (all routes, scheduler, AI & trend logic)
+│   ├── auth.py                 # JWT authentication helpers & dependency guards
+│   ├── database.py             # SQLAlchemy PostgreSQL engine (pg8000 driver)
+│   ├── models.py               # ORM data models (User, Brand, PostingPlan, ContentItem, etc.)
+│   ├── schemas.py              # Pydantic request/response validation schemas
+│   ├── promote_user.py         # Standalone script to manually promote a user to ADMIN
+│   ├── requirements.txt        # Python package dependencies
+│   └── .env                    # Backend environment secrets (git-ignored)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # Navbar, UI atoms
-│   │   ├── pages/           # Feature screens
-│   │   └── App.jsx          # Router
-│   ├── package.json
-│   └── vite.config.js
-├── backend_documentation.md # Full technical documentation
-└── README.md
+│   │   ├── components/
+│   │   │   └── Navbar.jsx      # Sticky sidebar navigation with role-based visibility
+│   │   ├── context/
+│   │   │   └── AuthContext.jsx # Authentication state provider (login/register/logout)
+│   │   ├── pages/
+│   │   │   ├── Landing.jsx          # Public marketing page with Starfield and pricing tiers
+│   │   │   ├── Login.jsx            # Authenticated modal login
+│   │   │   ├── Register.jsx         # Authenticated modal registration
+│   │   │   ├── VerifyOTP.jsx        # 5-digit verification page with email OTP
+│   │   │   ├── DashboardHome.jsx    # Telemetry cockpit & manual/auto mode selector
+│   │   │   ├── BrandManager.jsx     # Brand identity profile & Twitter connection portal
+│   │   │   ├── ContentWorkspace.jsx # AI generation workspace & trending topics hub
+│   │   │   ├── ScheduleEngine.jsx   # Day & time slot configuration & post queue builder
+│   │   │   └── AdminPanel.jsx       # Admin user list, quota controls & brand inspector
+│   │   ├── App.css             # Global component styles
+│   │   ├── App.jsx             # Root component with routing, guards, and layout
+│   │   ├── api.js              # Axios instance with request/response JWT interceptors
+│   │   ├── index.css           # TailwindCSS base styles
+│   │   └── main.jsx            # React 19 entry point
+│   ├── package.json            # Node.js dependencies & scripts
+│   └── vite.config.js          # Vite build configuration with React plugin
+├── backend_documentation.md    # Full technical backend documentation
+├── frontend_documentation.md   # Full technical frontend documentation
+└── README.md                   # Main project overview and setup guide
 ```
 
 ---
