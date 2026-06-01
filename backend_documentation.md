@@ -1,643 +1,537 @@
-# BrandOrbit — Backend Technical Documentation
+# BrandOrbit — Backend Documentation
 
-> **Version:** 1.0 | **Stack:** FastAPI · PostgreSQL · SQLAlchemy · Groq/Gemini · Twitter API v2  
-> **Server Entry Point:** `backend/main.py` | **API Explorer:** `http://127.0.0.1:8000/docs`
+**Project**: AI-Driven Multi-Brand Content Management System  
+**Technology Stack**: Python · FastAPI · SQLAlchemy · PostgreSQL · APScheduler  
+**Entry Point**: `backend/main.py`  
+**Base URL** (development): `http://localhost:8000`
 
 ---
 
 ## Table of Contents
 
-1. [System Architecture & Tech Stack](#1-system-architecture--tech-stack)
-2. [Database Design](#2-database-design)
-3. [System Modeling — User Flows & Logic](#3-system-modeling--user-flows--logic)
-4. [API Reference](#4-api-reference)
+1. [Architecture Overview](#1-architecture-overview)
+2. [Project File Structure](#2-project-file-structure)
+3. [Environment Variables (.env)](#3-environment-variables-env)
+4. [Dependencies (requirements.txt)](#4-dependencies)
+5. [Database Configuration](#5-database-configuration)
+6. [Data Models](#6-data-models)
+7. [Pydantic Schemas](#7-pydantic-schemas)
+8. [Authentication System](#8-authentication-system)
+9. [Background Scheduler](#9-background-scheduler)
+10. [AI Content Generation Engine](#10-ai-content-generation-engine)
+11. [Trend Intelligence Engine](#11-trend-intelligence-engine)
+12. [API Endpoints Reference](#12-api-endpoints-reference)
+    - [Root & Debug](#121-root--debug-endpoints)
+    - [Authentication](#122-authentication-endpoints)
+    - [User Profile](#123-user-profile-endpoint)
+    - [Brands](#124-brand-endpoints)
+    - [Posting Plan](#125-posting-plan-endpoints)
+    - [Content Lifecycle](#126-content-lifecycle-endpoints)
+    - [Twitter OAuth 2.0](#127-twitter-oauth-20-endpoints)
+    - [Validation Rules](#128-validation-rules-endpoints)
+    - [Admin Panel](#129-admin-panel-endpoints)
+13. [Content Status State Machine](#13-content-status-state-machine)
+14. [Queue Recalculation Logic](#14-queue-recalculation-logic)
+15. [Email OTP Service](#15-email-otp-service)
+16. [Error Handling Patterns](#16-error-handling-patterns)
+17. [Rate Limiting](#17-rate-limiting)
+18. [Running the Backend](#18-running-the-backend)
 
 ---
 
-## 1. System Architecture & Tech Stack
+## 1. Architecture Overview
 
-### 1.1 Executive Summary
+```
+┌───────────────────────────────────────────────────────────┐
+│                    FastAPI Application                     │
+│                                                           │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │  Auth Layer │  │  API Routes  │  │  Admin Routes   │  │
+│  │  (JWT/OTP)  │  │  (REST CRUD) │  │  (/api/admin/*) │  │
+│  └─────────────┘  └──────────────┘  └─────────────────┘  │
+│           │               │                   │           │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │              SQLAlchemy ORM Layer                  │   │
+│  │  User · Brand · ContentItem · PostingPlan · Rules  │   │
+│  └────────────────────────────────────────────────────┘   │
+│           │                                               │
+│  ┌────────────────────────────────────────────────────┐   │
+│  │           PostgreSQL Database (pg8000 driver)       │   │
+│  └────────────────────────────────────────────────────┘   │
+│                                                           │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  APScheduler (Background — every 30 seconds)        │  │
+│  │  → Publishes SCHEDULED content items via Twitter    │  │
+│  │  → Enforces daily post limit (3 per brand/day)      │  │
+│  │  → Calls maintain_auto_queue() to replenish AI fill │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                                                           │
+│  ┌──────────────────────┐  ┌──────────────────────────┐   │
+│  │  AI Generation        │  │  Trend Intelligence      │   │
+│  │  Groq LLaMA-3.3-70B  │  │  pytrends + LLM Refine   │   │
+│  │  Google Gemini Flash  │  │  4-hour cache TTL        │   │
+│  └──────────────────────┘  └──────────────────────────┘   │
+└───────────────────────────────────────────────────────────┘
+```
 
-BrandOrbit is an AI-driven, multi-brand social media content management and automation platform. Its backend is a **Python FastAPI monolith** that serves as the single source of truth for:
+**CORS**: All origins are allowed (`allow_origins=["*"]`) for local development.
 
-- **Authentication** — JWT-based stateless login with OTP email verification
-- **Brand Management** — Multi-tenancy supporting multiple brands per user, each with its own AI persona configuration
-- **AI Content Generation** — Groq LLaMA-3.3-70B (with Google Gemini fallback) synthesising platform-optimised tweets grounded in live Google Trends data
-- **Content Lifecycle** — A six-stage state machine (DRAFT → PENDING_APPROVAL → APPROVED → SCHEDULED → PUBLISHED / REJECTED)
-- **Automated Publishing** — An APScheduler background daemon that polls for due posts every 30 seconds and publishes to Twitter/X via OAuth 2.0 PKCE
-- **Auto-Pilot Mode** — Fully autonomous operation that self-replenishes the content queue without human input
+---
 
-### 1.2 Technology Stack
+## 2. Project File Structure
 
-| Layer | Technology | Purpose |
+```
+backend/
+├── main.py           # All routes, scheduler, AI logic, OTP, Twitter OAuth
+├── models.py         # SQLAlchemy ORM model definitions
+├── schemas.py        # Pydantic request/response schemas
+├── auth.py           # JWT authentication helpers & dependency guards
+├── database.py       # SQLAlchemy engine & session setup
+├── promote_user.py   # Standalone script to manually promote a user to ADMIN
+├── requirements.txt  # Python package dependencies (pinned versions)
+├── __init__.py       # Package marker
+└── .env              # Environment secrets (not committed to VCS)
+```
+
+---
+
+## 3. Environment Variables (.env)
+
+| Variable | Required | Description |
 |---|---|---|
-| **API Framework** | FastAPI 0.136 | HTTP request handling, dependency injection, OpenAPI docs |
-| **Language** | Python 3.14 | Runtime environment |
-| **Database** | PostgreSQL (via pgAdmin) | Persistent relational data storage |
-| **ORM** | SQLAlchemy 2.0 | Database model mapping and query building |
-| **DB Driver** | pg8000 1.31 | Pure-Python PostgreSQL adapter (no C++ build tools required) |
-| **Schema Validation** | Pydantic v2 | Request/response validation and serialisation |
-| **Auth — JWT** | python-jose (HS256) | Stateless Bearer token issuance and verification |
-| **Auth — Passwords** | passlib + bcrypt | Salted password hashing |
-| **AI — Primary** | Groq LLaMA-3.3-70B | High-speed LLM inference for content generation and trend refinement |
-| **AI — Fallback** | Google Gemini Flash | Secondary LLM if Groq API is unavailable |
-| **Trend Data** | pytrends | Real-time Google Trends scraping |
-| **Twitter/X** | Twitter API v2 + OAuth 2.0 PKCE | Authenticated social media publishing |
-| **Background Jobs** | APScheduler (BackgroundScheduler) | Interval-based scheduled post publishing every 30s |
-| **CORS** | FastAPI CORSMiddleware | Cross-origin request handling for the React frontend |
-| **Email/OTP** | Built-in smtplib (Gmail SMTP) | OTP verification codes sent via email, fallback to server console |
-| **Environment** | python-dotenv | `.env` file loading |
+| `DATABASE_URL` | **Yes** | PostgreSQL connection string. Example: `postgresql://user:pass@localhost:5432/brandorbit` |
+| `SECRET_KEY` | No | JWT signing secret. Defaults to a hardcoded fallback (change in production) |
+| `GROQ_API_KEY` | No* | API key for Groq LLaMA-3.3-70B AI model |
+| `GEMINI_API_KEY` | No* | API key for Google Gemini Flash (fallback AI) |
+| `TWITTER_CLIENT_ID` | No** | Twitter/X OAuth 2.0 App Client ID |
+| `TWITTER_CLIENT_SECRET` | No** | Twitter/X OAuth 2.0 App Client Secret |
+| `GMAIL_USER` | No | Gmail address for sending OTP verification emails |
+| `GMAIL_APP_PASSWORD` | No | Gmail App Password (not your login password) |
 
-### 1.3 High-Level Architecture Diagram
-
-```mermaid
-graph TD
-    subgraph FE["React Frontend — localhost:5173"]
-        UI["Vite · React 19 · Tailwind v4"]
-    end
-
-    subgraph BE["FastAPI Backend — localhost:8000"]
-        AUTH["Auth Module\nauth.py\nJWT · bcrypt · OTP"]
-        BRAND["Brand & Content\nController\nmain.py"]
-        ADMIN["Admin Panel\nADMIN role only"]
-        SCHED["APScheduler Daemon\nevery 30 seconds\npublish_scheduled_content()"]
-    end
-
-    subgraph EXT["External Services"]
-        DB[("PostgreSQL DB\n5 Tables")]
-        GROQ["Groq LLaMA-3.3-70B\n+ Gemini Flash Fallback"]
-        TRENDS["Google Trends\npytrends — 4hr cache"]
-        TWITTER["Twitter / X API v2\nOAuth 2.0 PKCE"]
-    end
-
-    UI -->|"REST / JSON + JWT Bearer"| AUTH
-    UI -->|"REST / JSON + JWT Bearer"| BRAND
-    UI -->|"REST / JSON + JWT Bearer"| ADMIN
-
-    AUTH -->|"SELECT / INSERT users"| DB
-    BRAND -->|"CRUD brands, content, plans"| DB
-    ADMIN -->|"Platform-wide queries"| DB
-
-    BRAND -->|"LLM prompt → 2-3 tweet drafts"| GROQ
-    BRAND -->|"niche keywords"| TRENDS
-    TRENDS -->|"rising queries"| GROQ
-
-    SCHED -->|"poll due items"| DB
-    SCHED -->|"POST /2/tweets"| TWITTER
-    SCHED -->|"refresh token if expired"| TWITTER
-    SCHED -->|"auto-generate if queue low"| GROQ
-```
-
-### 1.4 Data Flow — End-to-End Request Lifecycle
-
-```mermaid
-sequenceDiagram
-    participant UI as React Frontend
-    participant MW as CORS Middleware
-    participant DEP as auth.get_verified_user
-    participant EP as API Endpoint
-    participant DB as PostgreSQL
-
-    UI->>MW: HTTP Request + Authorization: Bearer token
-    MW->>DEP: Forward validated request
-    DEP->>DB: SELECT users WHERE email = token.sub
-    DB-->>DEP: User row
-    DEP->>EP: Inject verified user object
-    EP->>DB: SQLAlchemy ORM query / mutation
-    DB-->>EP: Result rows
-    EP-->>UI: 200 OK JSON (Pydantic serialised)
-```
+> *At least one of `GROQ_API_KEY` or `GEMINI_API_KEY` must be set for AI generation to work. If neither is set, content is not generated.  
+> **Twitter keys are required for real posting. Without them, the system uses mock publish mode.
 
 ---
 
-## 2. Database Design
+## 4. Dependencies
 
-### 2.1 Entity-Relationship Diagram (ERD)
+Key packages from `requirements.txt`:
 
-```mermaid
-erDiagram
-    users {
-        int id PK
-        varchar email UK
-        varchar hashed_password
-        enum role "ADMIN or EDITOR"
-        boolean is_verified
-    }
-
-    brands {
-        int id PK
-        varchar name UK
-        text description
-        varchar niche
-        text quirks
-        text persona_guidelines
-        varchar twitter_oauth2_access_token
-        varchar twitter_oauth2_refresh_token
-        datetime twitter_oauth2_token_expires_at
-        varchar twitter_username
-        varchar twitter_oauth_state
-        varchar twitter_oauth_code_verifier
-        varchar automation_mode
-        int generations_today
-        date last_generation_date
-        int posts_today
-        date last_post_date
-        datetime created_at
-        int owner_id FK
-    }
-
-    posting_plans {
-        int id PK
-        int brand_id FK
-        json active_days
-        json time_slots
-        varchar volume
-        boolean is_active
-    }
-
-    content_items {
-        int id PK
-        int brand_id FK
-        text body
-        enum status "DRAFT PENDING_APPROVAL APPROVED SCHEDULED PUBLISHED REJECTED"
-        datetime scheduled_for
-        varchar tweet_id
-        datetime created_at
-        int author_id FK
-    }
-
-    validation_rules {
-        int id PK
-        int brand_id FK
-        varchar rule_type
-        json parameters
-    }
-
-    users ||--o{ brands : "owns"
-    users ||--o{ content_items : "authors"
-    brands ||--o| posting_plans : "has"
-    brands ||--o{ content_items : "contains"
-    brands ||--o{ validation_rules : "enforces"
-```
-
-**Cascade Rules:**
-- Deleting a `User` cascades → deletes all owned `Brand` records
-- Deleting a `Brand` cascades → deletes all `ContentItem`, `ValidationRule`, and `PostingPlan` records
+| Package | Version | Purpose |
+|---|---|---|
+| `fastapi` | 0.136.1 | Web framework & REST API |
+| `uvicorn` | 0.46.0 | ASGI server |
+| `sqlalchemy` | 2.0.49 | ORM for PostgreSQL |
+| `pg8000` | 1.31.5 | Pure-Python PostgreSQL driver |
+| `pydantic` | 2.13.4 | Data validation & serialization |
+| `python-jose` | 3.5.0 | JWT token creation & verification |
+| `passlib` | 1.7.4 | bcrypt password hashing |
+| `APScheduler` | 3.11.2 | Background job scheduling |
+| `groq` | 1.2.0 | Groq AI (LLaMA-3.3-70B) client |
+| `google-generativeai` | 0.8.6 | Google Gemini AI client |
+| `pytrends` | 4.9.2 | Google Trends API wrapper |
+| `tweepy` | 4.16.0 | Twitter API client |
+| `python-dotenv` | 1.2.2 | `.env` file loading |
+| `requests` | 2.34.1 | HTTP client for Twitter token exchange |
 
 ---
 
-### 2.2 Data Dictionary
+## 5. Database Configuration
 
-#### Table: `users`
+**File**: [`database.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/database.py)
+
+The database layer uses SQLAlchemy with the pg8000 pure-Python driver for compatibility with Python 3.12+.
+
+```python
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+# Normalizes both "postgresql://" and "postgres://" to "postgresql+pg8000://"
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+```
+
+### DB Session Dependency
+
+```python
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+Used with `Depends(get_db)` on every endpoint that needs database access. Tables are auto-created at startup via `models.Base.metadata.create_all(bind=engine)`.
+
+---
+
+## 6. Data Models
+
+**File**: [`models.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/models.py)
+
+### 6.1 Enums
+
+#### `StatusEnum` (Content lifecycle states)
+| Value | Description |
+|---|---|
+| `DRAFT` | Newly generated/created, not yet reviewed |
+| `PENDING_APPROVAL` | Submitted for review |
+| `APPROVED` | Human-approved, ready to schedule |
+| `REJECTED` | Rejected during review |
+| `SCHEDULED` | Slotted into the posting queue with a date/time |
+| `PUBLISHED` | Successfully posted to Twitter/X |
+
+#### `UserRoleEnum`
+| Value | Description |
+|---|---|
+| `ADMIN` | Full system access including admin panel |
+| `EDITOR` | Standard user, can manage own brands/content |
+
+---
+
+### 6.2 `User` Model
+
+**Table**: `users`
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `id` | INTEGER | PK, auto-increment, indexed | Unique system identifier |
-| `email` | VARCHAR | UNIQUE, NOT NULL, indexed | Login credential and unique identity |
-| `hashed_password` | VARCHAR | NOT NULL | bcrypt-hashed password (passlib, 12 rounds) |
-| `role` | ENUM | DEFAULT `EDITOR` | Access level. `ADMIN` unlocks the admin panel; `EDITOR` is the standard user role |
-| `is_verified` | BOOLEAN | DEFAULT `FALSE` | Set to `TRUE` only after the user submits the correct OTP code sent at registration. Unverified users cannot access protected endpoints |
+| `id` | Integer | PK, indexed | Primary key |
+| `email` | String | unique, indexed | User email address |
+| `hashed_password` | String | — | bcrypt-hashed password |
+| `role` | Enum(UserRoleEnum) | default=EDITOR | User role |
+| `is_verified` | Boolean | default=False | OTP verification status |
+
+**Relationships**:
+- `content_items` → one-to-many with `ContentItem` (cascade delete)
+- `brands` → one-to-many with `Brand` (cascade delete)
 
 ---
 
-#### Table: `brands`
+### 6.3 `Brand` Model
 
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK, auto-increment, indexed | Unique brand identifier |
-| `name` | VARCHAR | UNIQUE, NOT NULL, indexed | Display name of the brand. Must be globally unique across all users |
-| `description` | TEXT | NULLABLE | Short human-readable brand description shown in the UI |
-| `niche` | VARCHAR | NULLABLE | The brand's topic category (e.g., "football", "fintech"). Required for AI generation and trend fetching |
-| `quirks` | TEXT | NULLABLE | Brand personality traits entered by the user (e.g., "uses Gen-Z slang, loves pop culture references"). Passed verbatim to the LLM prompt |
-| `persona_guidelines` | TEXT | NULLABLE | Explicit content rules and tone guidance passed directly to the LLM prompt |
-| `twitter_oauth2_access_token` | VARCHAR | NULLABLE | Short-lived OAuth 2.0 Bearer token for publishing to Twitter/X. Auto-refreshed when expired |
-| `twitter_oauth2_refresh_token` | VARCHAR | NULLABLE | Long-lived Refresh Token used to obtain new access tokens without re-authentication |
-| `twitter_oauth2_token_expires_at` | DATETIME | NULLABLE | UTC expiry timestamp of the access token. The system refreshes proactively 5 minutes before expiry |
-| `twitter_username` | VARCHAR | NULLABLE | Connected X/Twitter handle (e.g., `@BrandOrbit`). Populated automatically on OAuth callback |
-| `twitter_oauth_state` | VARCHAR | NULLABLE | Transient CSRF protection nonce for the PKCE flow. Cleared after successful callback |
-| `twitter_oauth_code_verifier` | VARCHAR | NULLABLE | Transient PKCE code verifier. Cleared after successful token exchange |
-| `automation_mode` | VARCHAR | DEFAULT `manual` | Controls the publishing pipeline: `manual` = user controls everything; `semi-automated` = AI generates, human approves; `auto` = fully autonomous |
-| `generations_today` | INTEGER | DEFAULT `0` | Counter reset each day. Capped at **4** per day to prevent API abuse |
-| `last_generation_date` | DATE | NULLABLE | The date `generations_today` was last incremented. Used to detect day rollover and reset the counter |
-| `posts_today` | INTEGER | DEFAULT `0` | Daily post counter. Capped at **3** per day by the scheduler |
-| `last_post_date` | DATE | NULLABLE | The date `posts_today` was last incremented. Used for daily reset detection |
-| `created_at` | DATETIME | DEFAULT `utcnow()` | Brand creation timestamp |
-| `owner_id` | INTEGER | FK → `users.id`, NOT NULL | Establishes brand ownership. Only the owning user can read or mutate the brand |
+**Table**: `brands`
 
----
+| Column | Type | Description |
+|---|---|---|
+| `id` | Integer PK | Primary key |
+| `name` | String unique | Brand display name |
+| `description` | Text | Brief brand description |
+| `niche` | String nullable | Industry niche (e.g. "Tech Startup") |
+| `quirks` | Text nullable | Tone quirks used in AI prompts |
+| `persona_guidelines` | Text | General content guidelines |
+| `twitter_oauth2_access_token` | String nullable | Current OAuth 2.0 access token |
+| `twitter_oauth2_refresh_token` | String nullable | OAuth 2.0 refresh token |
+| `twitter_oauth2_token_expires_at` | DateTime nullable | Token expiry timestamp |
+| `twitter_username` | String nullable | Connected Twitter handle |
+| `twitter_oauth_state` | String nullable | PKCE state (transient) |
+| `twitter_oauth_code_verifier` | String nullable | PKCE verifier (transient) |
+| `automation_mode` | String | `"manual"` or `"auto"` |
+| `generations_today` | Integer | AI generation counter (resets daily) |
+| `last_generation_date` | Date nullable | Date of last generation reset |
+| `posts_today` | Integer | Posts published today counter |
+| `last_post_date` | Date nullable | Date of last post reset |
+| `created_at` | DateTime | Record creation time (UTC) |
+| `owner_id` | Integer FK → users | Owning user |
 
-#### Table: `posting_plans`
-
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK, auto-increment | Unique plan identifier |
-| `brand_id` | INTEGER | FK → `brands.id`, UNIQUE | One-to-one relationship with `brands`. Each brand may have at most one posting plan |
-| `active_days` | JSON (Array) | NOT NULL | Days of the week to post. Example: `["Monday", "Wednesday", "Friday"]` |
-| `time_slots` | JSON (Array) | NOT NULL | Times of day to publish. Example: `["09:00", "17:00"]`. Max 3 slots |
-| `volume` | VARCHAR | NOT NULL | Posting velocity preset. One of: `chill` (low), `growth` (medium), `viral` (high) |
-| `is_active` | BOOLEAN | DEFAULT `TRUE` | When `FALSE`, the APScheduler skips all items for this brand even if their `scheduled_for` has passed |
+**Relationships**:
+- `owner` → belongs to `User`
+- `content_items` → one-to-many with `ContentItem` (cascade delete)
+- `validation_rules` → one-to-many with `ValidationRule` (cascade delete)
+- `posting_plan` → one-to-one with `PostingPlan` (cascade delete)
 
 ---
 
-#### Table: `content_items`
+### 6.4 `PostingPlan` Model
 
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK, auto-increment | Unique content identifier |
-| `brand_id` | INTEGER | FK → `brands.id`, NOT NULL | The brand this content belongs to |
-| `body` | TEXT | NOT NULL | The tweet text. The LLM is instructed to keep this under 280 characters |
-| `status` | ENUM | DEFAULT `DRAFT` | State machine position. Valid states: `DRAFT`, `PENDING_APPROVAL`, `APPROVED`, `SCHEDULED`, `PUBLISHED`, `REJECTED` |
-| `scheduled_for` | DATETIME | NULLABLE | UTC timestamp when this item is due to be published. Set by `recalculate_queue()` or manually |
-| `tweet_id` | VARCHAR | NULLABLE | Twitter's ID for the published tweet (e.g., `1234567890`). Prefixed `failed:<code>` on publish errors. Set to `mock_tweet_id_no_keys` when no OAuth credentials are configured |
-| `created_at` | DATETIME | DEFAULT `utcnow()` | Creation timestamp. Used for ordering and 7-day activity analytics |
-| `author_id` | INTEGER | FK → `users.id`, NULLABLE | The user who created or generated this content item |
+**Table**: `posting_plans`
 
-**Content Status Transitions:**
+| Column | Type | Description |
+|---|---|---|
+| `id` | Integer PK | Primary key |
+| `brand_id` | Integer FK unique → brands | Owning brand (one plan per brand) |
+| `active_days` | JSON | List of active day names e.g. `["Monday", "Wednesday", "Friday"]` |
+| `time_slots` | JSON | List of HH:MM strings e.g. `["09:00", "17:00"]` |
+| `volume` | String | AI volume strategy: `"chill"`, `"growth"`, or `"viral"` |
+| `is_active` | Boolean | Whether the schedule is active or paused |
 
-```mermaid
-stateDiagram-v2
-    [*] --> DRAFT : AI Generate or Manual Create
-    DRAFT --> PENDING_APPROVAL : submit()
-    DRAFT --> APPROVED : approve() direct
-    DRAFT --> DRAFT : remove_queue() reverts
-    PENDING_APPROVAL --> APPROVED : approve()
-    PENDING_APPROVAL --> REJECTED : reject()
-    APPROVED --> SCHEDULED : smart_schedule() or approve_and_queue()
-    SCHEDULED --> PUBLISHED : APScheduler fires
-    SCHEDULED --> PUBLISHED : publish() instant
-    SCHEDULED --> DRAFT : remove_queue()
-    PUBLISHED --> [*]
-    REJECTED --> [*]
+---
+
+### 6.5 `ContentItem` Model
+
+**Table**: `content_items`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | Integer PK | Primary key |
+| `brand_id` | Integer FK → brands | Owning brand |
+| `body` | Text | Post text content (≤280 chars for Twitter) |
+| `status` | Enum(StatusEnum) | Lifecycle state (default: DRAFT) |
+| `scheduled_for` | DateTime nullable | When to publish |
+| `tweet_id` | String nullable | Twitter tweet ID after publishing |
+| `created_at` | DateTime | Creation timestamp (UTC) |
+| `author_id` | Integer FK → users | User who created the item |
+
+---
+
+### 6.6 `ValidationRule` Model
+
+**Table**: `validation_rules`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | Integer PK | Primary key |
+| `brand_id` | Integer FK → brands | Owning brand |
+| `rule_type` | String | Rule category (e.g. `"forbidden_words"`, `"max_length"`) |
+| `parameters` | JSON | Rule configuration (e.g. `{"words": ["spam"]}`) |
+
+---
+
+## 7. Pydantic Schemas
+
+**File**: [`schemas.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/schemas.py)
+
+All schemas use `from_attributes = True` (Pydantic v2) for SQLAlchemy ORM compatibility.
+
+### User Schemas
+| Schema | Fields | Purpose |
+|---|---|---|
+| `UserBase` | email, role, is_verified | Shared base |
+| `UserCreate` | + password | Registration request body |
+| `User` | + id | Response model |
+| `Token` | access_token, token_type | JWT login response |
+| `TokenData` | email | Internal JWT payload |
+
+### Brand Schemas
+| Schema | Fields | Purpose |
+|---|---|---|
+| `BrandBase` | name, description, niche, quirks, persona_guidelines, twitter_*, automation_mode, generations_today, last_generation_date, posts_today, last_post_date | Shared base |
+| `BrandCreate` | (same as BrandBase) | Create/update request body |
+| `Brand` | + id, created_at, validation_rules, posting_plan | Full response model |
+
+### Content Schemas
+| Schema | Fields | Purpose |
+|---|---|---|
+| `ContentItemBase` | body, scheduled_for, tweet_id | Shared base |
+| `ContentItemCreate` | (same) | Create request body |
+| `ContentItemUpdate` | body | Edit DRAFT request body |
+| `ContentItem` | + id, brand_id, status, created_at, author_id | Full response model |
+| `TrendGenerateRequest` | trend (optional str) | AI generation trigger body |
+
+### PostingPlan Schemas
+| Schema | Fields | Purpose |
+|---|---|---|
+| `PostingPlanBase` | active_days, time_slots, volume, is_active | Shared base |
+| `PostingPlanCreate` | (same) | Save plan request body |
+| `PostingPlan` | + id, brand_id | Full response model |
+
+### Admin Schemas
+| Schema | Fields | Purpose |
+|---|---|---|
+| `AdminUserDetail` | id, email, role, is_verified, brands | Admin user list response |
+| `AdminUserRoleUpdate` | role | Role update request body |
+| `AdminBrandQuotaUpdate` | generations_today, posts_today | Quota override request body |
+
+---
+
+## 8. Authentication System
+
+**File**: [`auth.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/auth.py)
+
+### Configuration
+```python
+SECRET_KEY = os.getenv("SECRET_KEY", "<default_fallback>")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+```
+
+### Functions
+
+| Function | Signature | Description |
+|---|---|---|
+| `verify_password` | `(plain, hashed) → bool` | bcrypt password verification |
+| `get_password_hash` | `(password) → str` | bcrypt hash a password |
+| `create_access_token` | `(data, expires_delta) → str` | Create a signed JWT |
+| `get_current_user` | `async (token, db) → User` | Decode JWT, return User (raises 401 if invalid) |
+| `get_verified_user` | `async (current_user) → User` | Guard: requires `is_verified=True` (raises 403) |
+| `get_admin_user` | `async (current_user) → User` | Guard: requires `role=ADMIN` (raises 403) |
+
+### Dependency Chain
+
+```
+get_current_user
+      ↓ (guards: is_verified)
+get_verified_user          ← used on all protected brand/content routes
+      ↓ (guards: role=ADMIN)
+get_admin_user             ← used on all /api/admin/* routes
+```
+
+### OTP Flow
+
+OTP codes are stored in an **in-memory dictionary** `_otp_store: dict = {}`:
+```
+{ email: otp_code_string }
+```
+- Generated as a 5-digit random integer (10000–99999)
+- Delivered via Gmail SMTP or printed to terminal (fallback)
+- **Consumed on verification** — deleted from store after successful verify
+- No expiry timer (persists until used or server restarts)
+
+---
+
+## 9. Background Scheduler
+
+**Technology**: APScheduler `BackgroundScheduler` with `IntervalTrigger`
+
+### Job Configuration
+```python
+scheduler.add_job(
+    publish_scheduled_content,
+    trigger=IntervalTrigger(seconds=30),
+    id='publish_job',
+    name='Publish Scheduled Content',
+    replace_existing=True
+)
+```
+Fires every **30 seconds**. Starts on `startup` event, shuts down on `shutdown` event.
+
+### `publish_scheduled_content()` — Logic Flow
+
+```
+1. Open new DB session
+2. Query all ContentItems WHERE status=SCHEDULED AND scheduled_for <= now
+3. For each item:
+   a. Look up owning Brand
+   b. Check if brand's PostingPlan.is_active == True (skip if paused)
+   c. Reset posts_today counter if new calendar day
+   d. Check posts_today < 3 (daily limit enforcement)
+   e. Get valid OAuth 2.0 token (refresh if expired)
+   f. If token available:
+      → POST to https://api.twitter.com/2/tweets
+      → On 201 success: save tweet_id, mark PUBLISHED
+      → On failure: save "failed:{status}" as tweet_id
+   g. If no token:
+      → Mock publish: tweet_id = "mock_tweet_id_no_keys", mark PUBLISHED
+   h. Increment brand.posts_today
+   i. Call maintain_auto_queue() to replenish if auto-pilot mode
+4. Close DB session
 ```
 
 ---
 
-#### Table: `validation_rules`
+## 10. AI Content Generation Engine
 
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK, auto-increment | Unique rule identifier |
-| `brand_id` | INTEGER | FK → `brands.id`, NOT NULL | The brand this rule applies to |
-| `rule_type` | VARCHAR | NOT NULL | Rule category identifier. Example: `forbidden_words`, `max_length` |
-| `parameters` | JSON (Object) | NOT NULL | Configuration for the rule. Example: `{"words": ["spam", "cheap"]}` for `forbidden_words`; `{"value": 240}` for `max_length` |
+### `_trigger_ai_generation(brand_id, db, trend_context)`
+
+Internal helper called by both the public `/generate` endpoint and the auto-queue maintainer.
+
+**Rate limit**: Maximum **4 generations per brand per day** (tracked via `generations_today` and `last_generation_date` columns).
+
+**Prompt template**:
+```
+You are an expert social media manager for brand '{brand.name}'.
+Niche: {brand.niche}
+Brand Quirks: {brand.quirks}
+Persona Guidelines: {brand.persona_guidelines}
+Focus Topic / Trend: {trend_context}
+
+Task: Write 2-3 highly engaging posts under 280 characters each.
+Separate posts with '|||'. No extra conversational text.
+```
+
+**AI Provider Fallback Chain**:
+1. Try **Groq LLaMA-3.3-70B** (`groq_key`)
+2. If Groq fails → Try **Google Gemini Flash** (`gemini_key`)
+3. If neither is configured → Return empty list
+
+**Output parsing**: Splits response on `'|||'` separator, creates one `ContentItem` per segment with `status=DRAFT`.
 
 ---
 
-## 3. System Modeling — User Flows & Logic
+### `maintain_auto_queue(brand_id, db)`
 
-### 3.1 Use Case Diagram
+Called after every publish event (scheduler) and after generation.
 
-```mermaid
-flowchart LR
-    PUBLIC(["🌐 Public Guest"])
-    EDITOR(["👤 Editor User"])
-    ADMIN(["👑 Admin User"])
-    DAEMON(["⚙️ APScheduler Daemon"])
-
-    subgraph AUTH["Authentication"]
-        UC1["Register Account"]
-        UC2["Log In"]
-        UC3["Verify OTP"]
-        UC4["Resend OTP"]
-    end
-
-    subgraph BRAND_MGT["Brand Management"]
-        UC5["Create / Edit / Delete Brand"]
-        UC6["Configure AI Persona & Guidelines"]
-        UC7["Connect X Account via OAuth PKCE"]
-        UC8["Set Automation Mode"]
-        UC9["Disconnect X Account"]
-    end
-
-    subgraph CONTENT["Content Lifecycle"]
-        UC10["Fetch Niche Trends"]
-        UC11["Generate AI Content"]
-        UC12["Edit / Delete Draft"]
-        UC13["Submit for Approval"]
-        UC14["Approve / Reject Content"]
-        UC15["Smart-Schedule Content"]
-        UC16["Remove from Queue"]
-        UC17["Configure Posting Plan"]
-    end
-
-    subgraph ADMIN_PANEL["Admin Panel"]
-        UC18["View Platform Stats"]
-        UC19["List All Users"]
-        UC20["Change User Role"]
-        UC21["Delete User"]
-        UC22["Override Brand Quotas"]
-    end
-
-    subgraph DAEMON_JOBS["Background Automation"]
-        UC23["Auto-Publish Scheduled Posts"]
-        UC24["Auto-Refresh OAuth Tokens"]
-        UC25["Auto-Replenish Content Queue"]
-    end
-
-    PUBLIC --> AUTH
-    EDITOR --> AUTH
-    EDITOR --> BRAND_MGT
-    EDITOR --> CONTENT
-    ADMIN --> AUTH
-    ADMIN --> BRAND_MGT
-    ADMIN --> CONTENT
-    ADMIN --> ADMIN_PANEL
-    DAEMON --> DAEMON_JOBS
+```
+1. Check brand.automation_mode == "auto"
+2. Count currently SCHEDULED items → queued_count
+3. needed = 3 - queued_count
+4. If needed > 0:
+   a. Pull oldest DRAFT/PENDING_APPROVAL items up to `needed`
+   b. If still not enough → call _trigger_ai_generation() to make more
+   c. Set selected drafts to status=SCHEDULED, scheduled_for=now+365days (placeholder)
+   d. Call recalculate_queue() to assign real slots
 ```
 
 ---
 
-### 3.2 Sequence Diagrams
+## 11. Trend Intelligence Engine
 
-#### 3.2.1 User Registration & OTP Verification
+### `get_trends_for_brand(brand_id, db, current_user)`
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as Frontend
-    participant BE as FastAPI Backend
-    participant DB as PostgreSQL
+**Cache**: In-memory dict `_trend_cache` with 4-hour TTL (keyed by `niche.lower()`).
 
-    User->>FE: Fill registration form
-    FE->>BE: POST /api/auth/register
-    BE->>DB: INSERT INTO users (email, hashed_password)
-    DB-->>BE: New user row
-    BE->>BE: Generate 5-digit OTP
-    BE->>BE: Store OTP in _otp_store dict
-    Note over BE: OTP printed to server terminal
-    BE-->>FE: 201 User JSON (is_verified=false)
-    FE-->>User: Redirect to OTP verification screen
+**Pipeline**:
 
-    User->>FE: Enter OTP code
-    FE->>BE: POST /api/auth/verify-otp
-    BE->>BE: Lookup email in _otp_store
-    alt OTP matches
-        BE->>DB: UPDATE users SET is_verified=TRUE
-        BE-->>FE: 200 {status: success}
-        FE-->>User: Redirect to Login
-    else OTP wrong or not found
-        BE-->>FE: 400 Invalid verification code
-    end
 ```
+Step 1: pytrends
+  → TrendReq for niche keyword (past 7 days)
+  → Prefer "rising" queries over "top" queries
+  → Take top 5 raw queries
 
-#### 3.2.2 Login & JWT Issuance
+Step 2: LLM Refinement
+  If pytrends data available:
+    → Prompt LLM to reframe raw queries as engaging content angles
+  If pytrends failed:
+    → Prompt LLM to generate 3 trending content angles from knowledge
+  
+  → Returns comma-separated list of exactly 3 topic angles
+  → Strips surrounding quotes, pads with "General Industry Trend" if < 3
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as Frontend
-    participant BE as FastAPI Backend
-    participant DB as PostgreSQL
-
-    User->>FE: Submit email + password
-    FE->>BE: POST /api/auth/login (form-urlencoded)
-    BE->>DB: SELECT * FROM users WHERE email = ?
-    DB-->>BE: User row
-    alt Password valid
-        BE->>BE: bcrypt.verify(password, hashed_password)
-        BE->>BE: Sign JWT HS256 — expires in 7 days
-        BE-->>FE: 200 {access_token, token_type: bearer}
-        FE->>FE: Store token in memory
-    else Invalid credentials
-        BE-->>FE: 400 Incorrect email or password
-    end
-```
-
-#### 3.2.3 Twitter/X OAuth 2.0 PKCE Flow
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as Frontend
-    participant BE as FastAPI Backend
-    participant DB as PostgreSQL
-    participant TW as Twitter/X API
-
-    User->>FE: Click "Connect X Account"
-    FE->>BE: GET /api/auth/twitter/login?brand_id=N
-    BE->>BE: Generate PKCE verifier + S256 challenge
-    BE->>BE: Generate CSRF state nonce
-    BE->>DB: UPDATE brands SET oauth_state, code_verifier
-    BE-->>FE: {auth_url}
-    FE-->>User: Redirect browser to Twitter/X
-
-    User->>TW: Authorise BrandOrbit app
-    TW-->>BE: Redirect to /api/auth/twitter/callback?code=X&state=Y
-
-    BE->>DB: SELECT brand WHERE twitter_oauth_state = Y
-    BE->>TW: POST /2/oauth2/token (code + code_verifier)
-    TW-->>BE: {access_token, refresh_token, expires_in}
-    BE->>TW: GET /2/users/me
-    TW-->>BE: {data: {username: "XHandle"}}
-    BE->>DB: UPDATE brands SET tokens, username, clear PKCE fields
-    BE-->>User: Redirect to /brands?oauth=success&username=XHandle
-```
-
-#### 3.2.4 AI Content Generation
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as Frontend
-    participant BE as FastAPI Backend
-    participant DB as PostgreSQL
-    participant GROQ as Groq LLaMA
-    participant GEM as Gemini Flash
-
-    User->>FE: Click Generate with trend selected
-    FE->>BE: POST /api/brands/{id}/generate {trend: "..."}
-    BE->>DB: Verify brand ownership + load brand
-    BE->>BE: Check niche is set
-    BE->>BE: Check generations_today < 4
-    BE->>BE: Build LLM prompt with niche, quirks, guidelines, trend
-
-    BE->>GROQ: chat.completions.create(prompt)
-    alt Groq succeeds
-        GROQ-->>BE: 2-3 posts separated by "|||"
-    else Groq fails
-        BE->>GEM: generate_content(prompt)
-        GEM-->>BE: 2-3 posts separated by "|||"
-    end
-
-    BE->>DB: INSERT content_items (status=DRAFT)
-    BE->>DB: UPDATE brands SET generations_today += 1
-    BE->>BE: maintain_auto_queue()
-    BE-->>FE: 201 Array of ContentItem objects
-    FE-->>User: Show new drafts in Draft Board
-```
-
-#### 3.2.5 Token Auto-Refresh During Publishing
-
-```mermaid
-sequenceDiagram
-    participant SCH as APScheduler
-    participant BE as get_valid_twitter_token
-    participant DB as PostgreSQL
-    participant TW as Twitter/X API
-
-    SCH->>BE: item.scheduled_for <= now() — call get_valid_twitter_token()
-    BE->>BE: Check expires_at minus 5 minutes
-
-    alt Token is fresh
-        BE-->>SCH: Return valid access_token
-    else Token expired or expiring soon
-        BE->>TW: POST /2/oauth2/token grant_type=refresh_token
-        TW-->>BE: {new_access_token, refresh_token, expires_in}
-        BE->>DB: UPDATE brands SET new tokens + expires_at
-        BE-->>SCH: Return new access_token
-    end
-
-    SCH->>TW: POST /2/tweets {text: item.body}
-    TW-->>SCH: 201 {data: {id: tweet_id}}
-    SCH->>DB: UPDATE content_items SET status=PUBLISHED, tweet_id=...
-    SCH->>DB: UPDATE brands SET posts_today += 1
-    SCH->>SCH: maintain_auto_queue()
+Step 3: Cache result for 4 hours
+Step 4: Return List[str] of 3 topics
 ```
 
 ---
 
-### 3.3 Activity Diagrams
+## 12. API Endpoints Reference
 
-#### 3.3.1 APScheduler Auto-Pilot Daemon (Every 30 Seconds)
-
-```mermaid
-flowchart TD
-    A(["APScheduler fires every 30s"]) --> B["Query SCHEDULED items\nWHERE scheduled_for <= now()"]
-    B --> C{"Items due?"}
-    C -->|No| Z(["Return — wait for next interval"])
-    C -->|Yes| D["For each due item"]
-    D --> E{"Brand exists?"}
-    E -->|No| D
-    E -->|Yes| F{"PostingPlan\nis_active?"}
-    F -->|Inactive| D
-    F -->|Active| G{"New day?"}
-    G -->|Yes| H["Reset posts_today = 0"]
-    G -->|No| I{"posts_today >= 3?"}
-    H --> I
-    I -->|Yes — daily limit hit| D
-    I -->|No| J["get_valid_twitter_token()\nauto-refresh if expired"]
-    J --> K{"OAuth token\navailable?"}
-    K -->|Yes| L["POST /2/tweets\nTwitter API v2"]
-    K -->|No| M["Mock publish\nfor UI testing"]
-    L --> N{"Twitter\nreturns 201?"}
-    N -->|Yes| O["tweet_id stored"]
-    N -->|No| P["tweet_id = failed:status_code"]
-    O --> Q["status = PUBLISHED\nposts_today += 1\nmaintain_auto_queue()"]
-    M --> Q
-    P --> D
-    Q --> D
-```
-
-#### 3.3.2 `maintain_auto_queue()` — Auto-Pilot Queue Replenishment
-
-```mermaid
-flowchart TD
-    A(["maintain_auto_queue called"]) --> B{"automation_mode\n= auto?"}
-    B -->|No| Z(["Return — nothing to do"])
-    B -->|Yes| C["Count SCHEDULED items\nneeded = 3 - queued_count"]
-    C --> D{"needed <= 0?"}
-    D -->|Yes — queue is full| Z
-    D -->|No| E["Fetch up to 'needed' oldest\nDRAFT or PENDING_APPROVAL items"]
-    E --> F{"len drafts < needed?"}
-    F -->|Yes — not enough drafts| G["_trigger_ai_generation()\nLLM generates new drafts"]
-    F -->|No| H
-    G --> H["Combine existing + new drafts"]
-    H --> I["Set each draft → SCHEDULED\nscheduled_for = now + 365d placeholder"]
-    I --> J["recalculate_queue()\nAssigns real calendar slots"]
-    J --> Z
-```
-
-#### 3.3.3 `recalculate_queue()` — Calendar Slot Assignment
-
-```mermaid
-flowchart TD
-    A(["recalculate_queue called"]) --> B["Load PostingPlan\nLoad all SCHEDULED + APPROVED items"]
-    B --> C{"No plan OR\nno active_days OR\nno time_slots?"}
-    C -->|Yes — no valid schedule| D["Revert all items to APPROVED\nSet scheduled_for = NULL"]
-    D --> E(["COMMIT and return"])
-    C -->|No — plan exists| F{"No items\nto schedule?"}
-    F -->|Yes| E
-    F -->|No| G["Build slot list starting from now()\nWalk days forward chronologically"]
-    G --> H["For each day: if weekday in active_days\nFor each time_slot: if slot > now() → add"]
-    H --> I{"len slots >= len items?"}
-    I -->|No — keep walking| H
-    I -->|Yes| J["Assign slots[i] to items[i]\nSet status = SCHEDULED"]
-    J --> E
-```
-
----
-
-## 4. API Reference
-
-> **Base URL:** `http://127.0.0.1:8000`  
-> **Interactive Docs:** `http://127.0.0.1:8000/docs`  
-> **Auth Header Format:** `Authorization: Bearer <jwt_token>`
-
-**Authentication Levels:**
-- 🔓 **Public** — No token required
-- 🔐 **Authenticated** — Valid JWT required (`get_current_user`)
-- ✅ **Verified** — Valid JWT + `is_verified = TRUE` required (`get_verified_user`)
-- 👑 **Admin** — Valid JWT + `role = ADMIN` required (`get_admin_user`)
-
----
-
-### 4.1 System
-
----
+### 12.1 Root & Debug Endpoints
 
 #### `GET /`
+Returns API health message and link to interactive docs.
 
-**Description:** Health check — confirms the API server is running.  
-**Auth:** 🔓 Public  
-**Request:** None  
-
-**Response `200 OK`:**
+**Response** `200`:
 ```json
-{
-  "message": "AI-Driven CMS API is running. Go to /docs for interactive documentation."
-}
+{ "message": "AI-Driven CMS API is running. Go to /docs for interactive documentation." }
 ```
 
 ---
 
 #### `POST /api/debug/trigger-scheduler`
+Manually triggers `publish_scheduled_content()` immediately. Useful for testing.
 
-**Description:** Manually fires the publish scheduler immediately. Useful for testing scheduled posts without waiting 30 seconds.  
-**Auth:** 🔓 Public  
-**Request:** None  
-
-**Response `200 OK`:**
+**Response** `200`:
 ```json
-{
-  "message": "Scheduler triggered manually. Check backend logs for results."
-}
+{ "message": "Scheduler triggered manually. Check backend logs for results." }
 ```
 
 ---
 
-### 4.2 Authentication
-
----
+### 12.2 Authentication Endpoints
 
 #### `POST /api/auth/register`
+Registers a new user. Sends OTP verification email.
 
-**Description:** Creates a new user account. Sends a 5-digit OTP code to the server terminal (and optionally email). The account is flagged as `is_verified = FALSE` until OTP is confirmed.  
-**Auth:** 🔓 Public  
-
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
   "email": "user@example.com",
-  "password": "SecurePassword123"
+  "password": "secretpassword",
+  "role": "EDITOR"
 }
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `email` | string | ✅ | Must be unique. Used as login identifier |
-| `password` | string | ✅ | Plain-text password. Hashed with bcrypt before storage |
-
-**Response `200 OK`:**
+**Response** `200` — `User` schema:
 ```json
 {
   "id": 1,
@@ -647,693 +541,435 @@ flowchart TD
 }
 ```
 
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Email already registered"` |
+**Errors**:
+- `400` — Email already registered
+
+**Side Effects**: Generates OTP, stores in `_otp_store`, sends email via Gmail SMTP.
 
 ---
 
 #### `POST /api/auth/login`
+Authenticates a user. Uses OAuth2 form-encoded format.
 
-**Description:** Authenticates a user and returns a JWT Bearer token (7-day lifetime). The login endpoint accepts `application/x-www-form-urlencoded` data (OAuth2 password grant format), not JSON.  
-**Auth:** 🔓 Public  
-
-**Request Body** (`Content-Type: application/x-www-form-urlencoded`):
+**Request Body** (`application/x-www-form-urlencoded`):
 ```
-username=user@example.com&password=SecurePassword123
+username=user@example.com&password=secretpassword
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `username` | string | ✅ | The user's email address |
-| `password` | string | ✅ | The user's plain-text password |
-
-**Response `200 OK`:**
+**Response** `200` — `Token` schema:
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "access_token": "eyJ...",
   "token_type": "bearer"
 }
 ```
 
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Incorrect email or password"` |
+**Errors**:
+- `400` — Incorrect email or password
 
 ---
 
 #### `POST /api/auth/verify-otp`
+Verifies the OTP code sent to the user's email. Sets `user.is_verified = True`.
 
-**Description:** Submits the OTP code received at registration. On success, sets `is_verified = TRUE` on the user record, granting access to all protected endpoints.  
-**Auth:** 🔓 Public  
-
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
   "email": "user@example.com",
-  "otp": "48291"
+  "otp": "48321"
 }
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `email` | string | ✅ | The email address used during registration |
-| `otp` | string | ✅ | The 5-digit code from the server terminal output |
-
-**Response `200 OK`:**
+**Response** `200`:
 ```json
-{
-  "status": "success",
-  "message": "OTP verified successfully!"
-}
+{ "status": "success", "message": "OTP verified successfully!" }
 ```
 
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"No active verification code found for this email."` |
-| `400` | `"Invalid verification code. Please check your terminal console."` |
+**Errors**:
+- `400` — No active code found for email
+- `400` — Invalid verification code
 
 ---
 
 #### `POST /api/auth/resend-otp`
+Generates and sends a fresh OTP.
 
-**Description:** Generates a new OTP code and replaces the previous entry in the in-memory store. The new code is printed to the server terminal.  
-**Auth:** 🔓 Public  
-
-**Request Body:**
+**Request Body** (JSON):
 ```json
-{
-  "email": "user@example.com"
-}
+{ "email": "user@example.com" }
 ```
 
-**Response `200 OK`:**
+**Response** `200`:
 ```json
-{
-  "status": "success",
-  "message": "OTP resent successfully! Check your terminal console."
-}
+{ "status": "success", "message": "A new verification code has been sent to your email." }
 ```
 
 ---
+
+### 12.3 User Profile Endpoint
 
 #### `GET /api/users/me`
+Returns the currently authenticated user's profile.
 
-**Description:** Returns the profile of the currently authenticated user.  
-**Auth:** 🔐 Authenticated  
-
-**Response `200 OK`:**
-```json
-{
-  "id": 1,
-  "email": "user@example.com",
-  "role": "EDITOR",
-  "is_verified": true
-}
-```
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `401` | `"Could not validate credentials"` |
+**Auth**: Bearer token required  
+**Response** `200` — `User` schema
 
 ---
 
-### 4.3 Brands
+### 12.4 Brand Endpoints
 
----
+> All brand endpoints require **Bearer token** + **verified account** (`get_verified_user`).
 
 #### `POST /api/brands/`
+Creates a new brand for the authenticated user.
 
-**Description:** Creates a new brand owned by the authenticated user.  
-**Auth:** ✅ Verified  
-
-**Request Body:**
+**Request Body** — `BrandCreate` schema (JSON):
 ```json
 {
-  "name": "TechPulse",
-  "description": "A brand covering the latest in AI and startup news.",
-  "niche": "technology",
-  "quirks": "Loves analogies. Uses rhetorical questions. Gen-Z friendly.",
-  "persona_guidelines": "Always optimistic. Never use jargon without explaining it.",
+  "name": "NexusTech",
+  "description": "A cutting-edge AI startup",
+  "niche": "Tech Startup",
+  "quirks": "Uses Gen-Z slang, lots of emojis",
+  "persona_guidelines": "Professional yet approachable",
   "automation_mode": "manual"
 }
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `name` | string | ✅ | Globally unique brand name |
-| `description` | string | ❌ | Short brand description |
-| `niche` | string | ❌ | Topic category. Required before AI generation |
-| `quirks` | string | ❌ | Personality traits injected into the LLM prompt |
-| `persona_guidelines` | string | ❌ | Content tone rules injected into the LLM prompt |
-| `automation_mode` | string | ❌ | `"manual"`, `"semi-automated"`, or `"auto"`. Default: `"manual"` |
-
-**Response `200 OK`:** Full `Brand` object (see schema in Section 2.2)
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `401` | Unauthorized (missing/invalid token) |
-| `403` | `"Account not verified. Please verify your OTP first."` |
+**Response** `200` — `Brand` schema (includes `id`, `created_at`, empty `validation_rules`, null `posting_plan`)
 
 ---
 
 #### `GET /api/brands/`
+Lists all brands owned by the current user.
 
-**Description:** Returns all brands owned by the currently authenticated user.  
-**Auth:** ✅ Verified  
-**Query Params:** `skip` (int, default 0), `limit` (int, default 100)  
-
-**Response `200 OK`:**
-```json
-[
-  {
-    "id": 1,
-    "name": "TechPulse",
-    "niche": "technology",
-    "automation_mode": "manual",
-    "twitter_username": null,
-    "generations_today": 0,
-    "posts_today": 0,
-    "validation_rules": [],
-    "posting_plan": null,
-    ...
-  }
-]
-```
+**Query Params**: `skip` (int, default 0), `limit` (int, default 100)  
+**Response** `200` — `List[Brand]`
 
 ---
 
 #### `GET /api/brands/{brand_id}`
+Gets a single brand by ID (must be owner).
 
-**Description:** Retrieves a single brand by ID. Returns 404 if the brand doesn't exist or is owned by another user.  
-**Auth:** ✅ Verified  
-
-**Path Params:** `brand_id` (int)  
-
-**Response `200 OK`:** Full `Brand` object  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `404` | `"Brand not found"` |
+**Response** `200` — `Brand` schema  
+**Errors**: `404` — Brand not found
 
 ---
 
 #### `PUT /api/brands/{brand_id}`
+Updates a brand's basic fields. **Protected fields** (OAuth tokens, twitter_username, etc.) are automatically excluded from updates to prevent accidental token overwrites.
 
-**Description:** Updates brand fields. OAuth token fields are **protected** — the frontend cannot accidentally wipe Twitter credentials via this endpoint.  
-**Auth:** ✅ Verified  
-
-**Path Params:** `brand_id` (int)  
-
-**Request Body:** Same structure as `POST /api/brands/` (any subset of fields)
-
-**Protected Fields (silently ignored even if sent):**
-- `twitter_oauth2_access_token`
-- `twitter_oauth2_refresh_token`
-- `twitter_oauth2_token_expires_at`
-- `twitter_username`
-- `twitter_oauth_state`
-- `twitter_oauth_code_verifier`
-
-**Response `200 OK`:** Updated `Brand` object  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `404` | `"Brand not found"` |
+**Request Body** — `BrandCreate` schema  
+**Response** `200` — `Brand` schema  
+**Errors**: `404` — Brand not found
 
 ---
 
 #### `PUT /api/brands/{brand_id}/mode`
+Switches the brand between `"manual"` and `"auto"` automation modes.
 
-**Description:** Updates the automation mode for a brand. Setting mode to `"auto"` immediately triggers `maintain_auto_queue()` to ensure the queue has at least 3 items.  
-**Auth:** ✅ Verified  
-
-**Request Body:**
+**Request Body** (JSON):
 ```json
-{
-  "automation_mode": "auto"
-}
+{ "automation_mode": "auto" }
 ```
 
-| Value | Behaviour |
-|---|---|
-| `"manual"` | User controls all steps manually |
-| `"semi-automated"` | AI generates content; human must approve |
-| `"auto"` | Fully autonomous: AI generates, approves, schedules, and publishes |
-
-**Response `200 OK`:** Updated `Brand` object  
+**Response** `200` — `Brand` schema  
+**Side Effects**: If switching to `"auto"`, calls `maintain_auto_queue()` immediately.
 
 ---
 
-### 4.4 Posting Plans
-
----
+### 12.5 Posting Plan Endpoints
 
 #### `GET /api/brands/{brand_id}/plan`
+Gets the posting plan for a brand.
 
-**Description:** Fetches the active posting schedule (days, time slots, volume) for a brand.  
-**Auth:** ✅ Verified  
-
-**Response `200 OK`:**
+**Response** `200` — `PostingPlan` schema:
 ```json
 {
   "id": 1,
-  "brand_id": 1,
+  "brand_id": 5,
   "active_days": ["Monday", "Wednesday", "Friday"],
-  "time_slots": ["09:00", "17:30"],
+  "time_slots": ["09:00", "17:00"],
   "volume": "growth",
   "is_active": true
 }
 ```
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `404` | `"Brand not found"` or `"Posting plan not found"` |
+**Errors**: `404` — Brand not found, or posting plan not found
 
 ---
 
 #### `POST /api/brands/{brand_id}/plan`
+Creates or updates the posting plan (upsert). Triggers `recalculate_queue()` after saving.
 
-**Description:** Creates or updates the posting plan for a brand (upsert). After saving, `recalculate_queue()` is called automatically to re-slot any pending SCHEDULED or APPROVED items.  
-**Auth:** ✅ Verified  
-
-**Request Body:**
+**Request Body** — `PostingPlanCreate` schema:
 ```json
 {
   "active_days": ["Monday", "Wednesday", "Friday"],
-  "time_slots": ["09:00", "17:30"],
+  "time_slots": ["09:00", "17:00"],
   "volume": "growth",
   "is_active": true
 }
 ```
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `active_days` | `string[]` | ✅ | Days of the week. Valid values: `"Monday"` through `"Sunday"` |
-| `time_slots` | `string[]` | ✅ | Times in `"HH:MM"` 24h format. Maximum 3 slots |
-| `volume` | string | ✅ | `"chill"`, `"growth"`, or `"viral"` |
-| `is_active` | boolean | ❌ | Default `true`. Set to `false` to pause the schedule without deleting it |
-
-**Response `200 OK`:** `PostingPlan` object  
+**Response** `200` — `PostingPlan` schema  
+**Side Effects**: Calls `recalculate_queue()` which re-slots all SCHEDULED items.
 
 ---
 
-### 4.5 Trends & AI Generation
-
----
-
-#### `GET /api/brands/{brand_id}/trends`
-
-**Description:** Returns 3 AI-refined, human-readable trending content angles for the brand's niche. Pulls real Google Trends data via pytrends, then uses Groq LLaMA (with Gemini fallback) to reframe raw queries into compelling content hooks.
-
-**Cache:** Results are cached server-side for **4 hours** per niche key. Returns `[]` if the brand has no niche configured.  
-**Auth:** ✅ Verified  
-
-**Response `200 OK`:**
-```json
-[
-  "Why ChatGPT's new memory feature is dividing power users",
-  "How open-source models are outperforming GPT-4 on benchmarks",
-  "The AI hardware shortage that nobody is talking about"
-]
-```
-
-**Response when no niche set:** `[]`
-
----
-
-#### `POST /api/brands/{brand_id}/generate`
-
-**Description:** Triggers AI content generation for the brand. Produces 2-3 tweet drafts anchored to the given trend angle. Enforces a **daily limit of 4 generation runs** per brand per day.  
-**Auth:** ✅ Verified  
-
-**Request Body (optional):**
-```json
-{
-  "trend": "Why ChatGPT's new memory feature is dividing power users"
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `trend` | string | ❌ | A specific trend angle to write about. If omitted, defaults to `"General industry topics"` |
-
-**Response `200 OK`:** Array of newly created `ContentItem` objects with `status: "DRAFT"`
-
-```json
-[
-  {
-    "id": 12,
-    "brand_id": 1,
-    "body": "ChatGPT's memory update is wild 🧠 Your AI now remembers you...",
-    "status": "DRAFT",
-    "scheduled_for": null,
-    "tweet_id": null,
-    "created_at": "2026-05-23T05:00:00",
-    "author_id": null
-  }
-]
-```
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Brand must have a niche set for AI generation"` |
-| `404` | `"Brand not found"` |
-| `429` | `"Daily post generation limit reached (4 max per day)"` |
-| `500` | `"Neither GROQ_API_KEY nor GEMINI_API_KEY is configured in the environment."` |
-
----
-
-### 4.6 Content Lifecycle
-
----
+### 12.6 Content Lifecycle Endpoints
 
 #### `POST /api/brands/{brand_id}/content`
+Manually creates a content item for a brand.
 
-**Description:** Manually creates a content draft for a brand (bypasses AI generation).  
-**Auth:** ✅ Verified  
-
-**Request Body:**
+**Request Body** — `ContentItemCreate` schema:
 ```json
-{
-  "body": "Manually written tweet content here.",
-  "scheduled_for": null,
-  "tweet_id": null
-}
+{ "body": "This is my tweet content" }
 ```
 
-**Response `200 OK`:** `ContentItem` object with `status: "DRAFT"`
+**Response** `200` — `ContentItem` schema
 
 ---
 
 #### `GET /api/brands/{brand_id}/content`
+Lists all content items for a brand, ordered by `created_at` descending.
 
-**Description:** Returns all content items for a brand, ordered by `created_at` descending (newest first).  
-**Auth:** ✅ Verified  
+**Response** `200` — `List[ContentItem]`
 
-**Response `200 OK`:** Array of `ContentItem` objects
+---
 
+#### `GET /api/brands/{brand_id}/trends`
+Fetches trending topics for the brand's niche using pytrends + LLM refinement.
+
+**Response** `200` — `List[str]` (3 topic strings)  
+**Cache**: 4-hour in-memory cache per niche keyword.
+
+---
+
+#### `POST /api/brands/{brand_id}/generate`
+AI-generates 2–3 posts for the brand based on an optional trend.
+
+**Request Body** (JSON, optional):
 ```json
-[
-  {
-    "id": 12,
-    "brand_id": 1,
-    "body": "Tweet body here",
-    "status": "SCHEDULED",
-    "scheduled_for": "2026-05-26T09:00:00",
-    "tweet_id": null,
-    "created_at": "2026-05-23T05:00:00",
-    "author_id": 1
-  }
-]
+{ "trend": "How AI is disrupting traditional job markets" }
 ```
+If omitted, uses `"General industry topics"` as context.
+
+**Response** `200` — `List[ContentItem]` (new DRAFT items)  
+**Errors**:
+- `400` — Brand has no niche set
+- `429` — Daily generation limit reached (4 max per brand per day)
+- `500` — No API keys configured
 
 ---
 
 #### `PUT /api/content/{content_id}`
+Edits the body of a DRAFT content item.
 
-**Description:** Edits the body of a DRAFT content item. Ownership is enforced — only the brand owner can edit.  
-**Auth:** ✅ Verified  
-
-**Path Params:** `content_id` (int)  
-
-**Request Body:**
+**Request Body** — `ContentItemUpdate` schema:
 ```json
-{
-  "body": "Updated tweet text goes here."
-}
+{ "body": "Updated tweet text here" }
 ```
 
-**Response `200 OK`:** Updated `ContentItem` object  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Only DRAFT content can be edited"` |
-| `403` | `"Not authorized to edit this content"` |
-| `404` | `"Content not found"` |
+**Response** `200` — `ContentItem` schema  
+**Errors**:
+- `400` — Only DRAFT content can be edited
+- `403` — Not authorized (not brand owner)
+- `404` — Content not found
 
 ---
 
 #### `DELETE /api/content/{content_id}`
+Permanently deletes a content item. If item was SCHEDULED, recalculates the queue.
 
-**Description:** Permanently deletes a content item. If the item was SCHEDULED, `recalculate_queue()` and `maintain_auto_queue()` are triggered to fill the gap.  
-**Auth:** ✅ Verified  
-
-**Response `200 OK`:**
+**Response** `200`:
 ```json
 { "ok": true }
 ```
 
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `403` | `"Not authorized to delete this content"` |
-| `404` | `"Content not found"` |
-
 ---
 
 #### `POST /api/content/{content_id}/submit`
+Transitions a DRAFT item to `PENDING_APPROVAL`.
 
-**Description:** Transitions a DRAFT to PENDING_APPROVAL for human review.  
-**Auth:** ✅ Verified (no ownership check — any verified user can submit)  
-
-**Response `200 OK`:** `ContentItem` with `status: "PENDING_APPROVAL"`  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Only DRAFT content can be submitted"` |
+**Response** `200` — `ContentItem` schema  
+**Errors**: `400` — Only DRAFT can be submitted
 
 ---
 
 #### `POST /api/content/{content_id}/approve`
+Transitions DRAFT or PENDING_APPROVAL to `APPROVED`.
 
-**Description:** Approves a content item. Accepts items in either `DRAFT` or `PENDING_APPROVAL` state (supports both direct-approval and review-then-approve flows).  
-**Auth:** ✅ Verified (no ownership check)  
-
-**Response `200 OK`:** `ContentItem` with `status: "APPROVED"`  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Content must be DRAFT or PENDING_APPROVAL to approve"` |
+**Response** `200` — `ContentItem` schema
 
 ---
 
 #### `POST /api/content/{content_id}/reject`
+Transitions `PENDING_APPROVAL` to `REJECTED`.
 
-**Description:** Rejects a content item that is in PENDING_APPROVAL.  
-**Auth:** ✅ Verified (no ownership check)  
-
-**Response `200 OK`:** `ContentItem` with `status: "REJECTED"`  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Content must be PENDING_APPROVAL to reject"` |
+**Response** `200` — `ContentItem` schema  
+**Errors**: `400` — Must be PENDING_APPROVAL
 
 ---
 
 #### `POST /api/content/{content_id}/schedule`
+Manually schedules an APPROVED item for a specific datetime.
 
-**Description:** Manually assigns a specific datetime to an APPROVED item and sets it to SCHEDULED.  
-**Auth:** ✅ Verified (no ownership check)  
-
-**Query Params:** `scheduled_for` (datetime, ISO 8601 format, e.g. `2026-05-26T09:00:00`)  
-
-**Response `200 OK`:** `ContentItem` with `status: "SCHEDULED"` and the provided `scheduled_for` value  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Content must be APPROVED to schedule"` |
+**Query Param**: `scheduled_for` (ISO datetime string)  
+**Response** `200` — `ContentItem` schema  
+**Errors**: `400` — Must be APPROVED
 
 ---
 
 #### `POST /api/content/{content_id}/smart_schedule`
+Atomically schedules an APPROVED item into the next available slot from the posting plan.
 
-**Description:** Automatically slots an APPROVED item into the next available calendar window defined by the brand's `PostingPlan`. Requires the brand to have an active posting plan configured. Uses a safe placeholder date (+365 days) before `recalculate_queue()` assigns the real slot.  
-**Auth:** ✅ Verified (no ownership check)  
+**Response** `200` — `ContentItem` schema  
+**Errors**:
+- `400` — Must be APPROVED
+- `400` — No posting plan configured
 
-**Response `200 OK`:** `ContentItem` with `status: "SCHEDULED"` and the computed `scheduled_for` datetime  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Content must be APPROVED to queue"` |
-| `400` | `"Please configure a posting schedule in the Schedule Engine first."` |
+**Logic**: Sets `scheduled_for = now + 365 days` as placeholder, then calls `recalculate_queue()` to assign real slot.
 
 ---
 
 #### `POST /api/content/{content_id}/approve_and_queue`
+**Atomic operation**: Approves AND immediately queues a DRAFT/PENDING item in one call. Prevents the race condition between separate approve + smart_schedule calls.
 
-**Description:** Atomic operation — approves a DRAFT/PENDING_APPROVAL item and immediately smart-schedules it in a single transaction. Avoids the race condition that could occur if the two-step approve + smart_schedule requests were handled separately.  
-**Auth:** ✅ Verified (ownership enforced)  
-
-**Response `200 OK`:** `ContentItem` with `status: "SCHEDULED"`  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Content must be DRAFT or PENDING_APPROVAL"` |
-| `400` | `"Please configure a posting schedule in the Schedule Engine first."` |
-| `403` | `"Not authorized to approve this content"` |
+**Auth**: Requires verified user + brand ownership  
+**Response** `200` — `ContentItem` schema  
+**Errors**: `400` — No posting plan configured, `403` — Not authorized
 
 ---
 
 #### `POST /api/content/{content_id}/remove_queue`
+Removes a SCHEDULED item back to DRAFT status. Recalculates the queue.
 
-**Description:** Pulls a SCHEDULED item back to DRAFT, clearing its `scheduled_for` timestamp. Triggers `recalculate_queue()` to compact remaining scheduled items and `maintain_auto_queue()` if the brand is in auto mode.  
-**Auth:** ✅ Verified (ownership enforced)  
-
-**Response `200 OK`:** `ContentItem` with `status: "DRAFT"`, `scheduled_for: null`  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Content must be SCHEDULED to remove"` |
-| `403` | `"Not authorized to modify this queue"` |
+**Auth**: Requires verified user + brand ownership  
+**Response** `200` — `ContentItem` schema  
+**Errors**: `400` — Must be SCHEDULED
 
 ---
 
 #### `POST /api/content/{content_id}/publish`
+Immediately publishes an APPROVED or SCHEDULED item to Twitter/X via OAuth 2.0.
 
-**Description:** Instantly publishes a content item (APPROVED or SCHEDULED) to Twitter/X via the brand's OAuth 2.0 access token. Auto-refreshes the token if expired. Falls back to a mock publish if no OAuth credentials are configured (for testing).  
-**Auth:** ✅ Verified (no ownership check)  
-
-**Response `200 OK`:** `ContentItem` with `status: "PUBLISHED"` and `tweet_id` populated  
-
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Content must be APPROVED or SCHEDULED to publish"` |
-| `500` | `"Failed to post via OAuth 2.0: <Twitter error>"` |
+**Response** `200` — `ContentItem` schema with `status=PUBLISHED` and `tweet_id`  
+**Mock behavior**: If no OAuth token configured, mock-publishes and marks as PUBLISHED.
 
 ---
 
-### 4.7 Twitter/X OAuth 2.0
+### 12.7 Twitter OAuth 2.0 Endpoints
 
----
+Uses **OAuth 2.0 PKCE** (Proof Key for Code Exchange) for maximum security.
 
-#### `GET /api/auth/twitter/login`
+#### `GET /api/auth/twitter/login?brand_id={id}`
+Initiates the Twitter OAuth 2.0 PKCE flow for a brand.
 
-**Description:** Initiates the Twitter OAuth 2.0 PKCE flow for a brand. Generates a PKCE verifier/challenge pair and a CSRF state nonce, stores them in the brand record, and returns the Twitter authorization URL for the frontend to redirect the user to.  
-**Auth:** 🔓 Public (brand_id provided as query param)  
+**Flow**:
+1. Generates PKCE `verifier` (128-char URL-safe random) + `challenge` (SHA256 base64url)
+2. Generates random `state` token
+3. Saves `state` and `verifier` to brand record
+4. Returns Twitter authorization URL
 
-**Query Params:** `brand_id` (int, required)  
-
-**Response `200 OK`:**
+**Response** `200`:
 ```json
-{
-  "auth_url": "https://twitter.com/i/oauth2/authorize?response_type=code&client_id=...&code_challenge=...&code_challenge_method=S256"
-}
+{ "auth_url": "https://twitter.com/i/oauth2/authorize?..." }
 ```
 
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `404` | `"Brand not found"` |
-| `500` | `"TWITTER_CLIENT_ID not configured in backend environment"` |
+**Scopes requested**: `tweet.read tweet.write users.read offline.access`
 
 ---
 
-#### `GET /api/auth/twitter/callback`
+#### `GET /api/auth/twitter/callback?code=...&state=...`
+Handles the Twitter OAuth callback after user authorization.
 
-**Description:** OAuth 2.0 PKCE callback endpoint registered with Twitter Developer Portal. Validates the CSRF state, exchanges the authorization code for access/refresh tokens using the stored PKCE verifier, fetches the connected X username, and persists the tokens to the brand. Redirects browser to the frontend.  
-**Auth:** 🔓 Public (called directly by Twitter's redirect)  
+**Flow**:
+1. Validates `state` against stored brand record
+2. Exchanges `code` for access + refresh tokens
+3. Fetches Twitter username via `/2/users/me`
+4. Stores tokens + expiry + username to brand
+5. Clears transient PKCE fields
+6. Redirects to `http://localhost:5173/brands?oauth=success&username=<handle>`
 
-**Query Params (from Twitter):** `code` (string), `state` (string), or `error` (string on failure)  
-
-**Redirect on Success:** `http://localhost:5173/brands?oauth=success&username=<handle>`  
-**Redirect on Failure:** `http://localhost:5173/brands?oauth=failed&reason=<reason>`  
+**On Error**: Redirects to `http://localhost:5173/brands?oauth=failed&reason=...`
 
 ---
 
 #### `POST /api/brands/{brand_id}/disconnect`
+Disconnects the Twitter account from a brand (clears all token fields).
 
-**Description:** Wipes the brand's stored Twitter OAuth credentials (`access_token`, `refresh_token`, `expires_at`, `username`). Does not revoke the token on Twitter's side.  
-**Auth:** 🔓 Public (no auth check — consider adding one in a production hardening pass)  
-
-**Response `200 OK`:** `Brand` object with all `twitter_*` fields set to `null`
+**Response** `200` — `Brand` schema (with null Twitter fields)
 
 ---
 
-### 4.8 Validation Rules
+#### Token Refresh Logic — `get_valid_twitter_token(db_brand, db)`
+
+Called before every publish attempt. Automatically refreshes the access token if it is expired or expires within 5 minutes:
+```
+1. Check if access_token + refresh_token exist
+2. If token_expires_at - 5min <= now → refresh
+3. POST to https://api.twitter.com/2/oauth2/token with refresh_token grant
+4. Save new access_token, refresh_token, expires_at to DB
+5. Return valid access_token (or None on failure)
+```
 
 ---
+
+### 12.8 Validation Rules Endpoints
 
 #### `POST /api/brands/{brand_id}/rules`
+Adds a validation rule to a brand.
 
-**Description:** Attaches a content validation rule to a brand.  
-**Auth:** 🔓 Public (no auth check on this endpoint)  
-
-**Request Body:**
+**Request Body** — `ValidationRuleCreate` schema:
 ```json
 {
   "rule_type": "forbidden_words",
-  "parameters": { "words": ["spam", "cheap", "free money"] }
+  "parameters": { "words": ["spam", "free money"] }
 }
 ```
 
-**Response `200 OK`:** `ValidationRule` object  
+**Response** `200` — `ValidationRule` schema
 
 ---
 
 #### `GET /api/brands/{brand_id}/rules`
+Lists all validation rules for a brand.
 
-**Description:** Lists all validation rules for a brand.  
-**Auth:** 🔓 Public  
-
-**Response `200 OK`:** Array of `ValidationRule` objects  
+**Response** `200` — `List[ValidationRule]`
 
 ---
 
-### 4.9 Admin Panel
+### 12.9 Admin Panel Endpoints
 
-> All endpoints in this section require `role = ADMIN`. Sending a request with an `EDITOR` token returns `403 Forbidden`.
-
----
+> All admin endpoints require **Bearer token** + **verified account** + **ADMIN role** (`get_admin_user`).
 
 #### `GET /api/admin/stats`
+Returns system-wide statistics for the admin dashboard.
 
-**Description:** Returns a comprehensive platform snapshot including user counts, brand counts, content pipeline breakdown, 7-day activity timeline, and niche distribution.  
-**Auth:** 👑 Admin  
-
-**Response `200 OK`:**
+**Response** `200`:
 ```json
 {
   "stats": {
-    "total_users": 42,
-    "verified_users": 38,
-    "unverified_users": 4,
-    "total_brands": 115,
-    "connected_brands": 87,
-    "disconnected_brands": 28,
+    "total_users": 10,
+    "verified_users": 8,
+    "unverified_users": 2,
+    "total_brands": 15,
+    "connected_brands": 9,
+    "disconnected_brands": 6,
     "content": {
-      "drafts": 203,
-      "scheduled": 89,
-      "published": 1204,
-      "rejected": 17,
-      "pending": 5
+      "drafts": 45,
+      "scheduled": 22,
+      "published": 130,
+      "rejected": 5,
+      "pending": 3
     }
   },
   "activity_timeline": [
-    { "date": "May 17", "published": 12, "scheduled": 8 },
-    { "date": "May 18", "published": 9, "scheduled": 11 }
+    { "date": "May 26", "published": 3, "scheduled": 7 },
+    ...  // 7 days of data
   ],
   "niche_timeline": [
-    { "niche": "technology", "count": 34 },
-    { "niche": "football", "count": 18 }
+    { "niche": "Tech Startup", "count": 4 },
+    ...
   ]
 }
 ```
@@ -1341,101 +977,49 @@ username=user@example.com&password=SecurePassword123
 ---
 
 #### `GET /api/admin/users`
+Returns all users with full brand details, content counts, and posting plan data.
 
-**Description:** Returns all registered users with their full brand portfolios, including posting plan data and content counts.  
-**Auth:** 👑 Admin  
-
-**Response `200 OK`:** Array of user objects, each containing:
-```json
-[
-  {
-    "id": 1,
-    "email": "user@example.com",
-    "role": "EDITOR",
-    "is_verified": true,
-    "brands": [
-      {
-        "id": 1,
-        "name": "TechPulse",
-        "niche": "technology",
-        "twitter_username": "TechPulseX",
-        "automation_mode": "auto",
-        "scheduled_count": 3,
-        "published_count": 47,
-        "posting_plan": {
-          "active_days": ["Monday", "Wednesday", "Friday"],
-          "time_slots": ["09:00"],
-          "volume": "growth",
-          "is_active": true
-        }
-      }
-    ]
-  }
-]
-```
+**Response** `200` — Array of user objects with expanded brand data including `scheduled_count`, `published_count`, and `posting_plan` details.
 
 ---
 
 #### `PUT /api/admin/users/{user_id}/role`
+Promotes or demotes a user's role.
 
-**Description:** Promotes or demotes a user's role. An admin cannot modify their own role.  
-**Auth:** 👑 Admin  
-
-**Path Params:** `user_id` (int)  
-
-**Request Body:**
+**Request Body** (JSON):
 ```json
-{
-  "role": "ADMIN"
-}
+{ "role": "ADMIN" }
 ```
 
-**Response `200 OK`:**
+**Response** `200`:
 ```json
-{
-  "ok": true,
-  "user_id": 5,
-  "new_role": "ADMIN"
-}
+{ "ok": true, "user_id": 3, "new_role": "ADMIN" }
 ```
 
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Cannot modify your own administrative role"` |
-| `404` | `"User not found"` |
+**Errors**:
+- `400` — Cannot modify your own role
+- `404` — User not found
 
 ---
 
 #### `DELETE /api/admin/users/{user_id}`
+Permanently deletes a user and all associated data (cascading delete: brands, content, plans, rules).
 
-**Description:** Permanently deletes a user and all their associated data (brands, content, plans, rules) via cascade deletion. An admin cannot delete their own account.  
-**Auth:** 👑 Admin  
-
-**Response `200 OK`:**
+**Response** `200`:
 ```json
-{
-  "ok": true,
-  "detail": "User and all associated data permanently deleted"
-}
+{ "ok": true, "detail": "User and all associated data permanently deleted" }
 ```
 
-**Error Responses:**
-| Status | Detail |
-|---|---|
-| `400` | `"Cannot delete your own administrative profile"` |
-| `404` | `"User not found"` |
+**Errors**:
+- `400` — Cannot delete your own account
+- `404` — User not found
 
 ---
 
 #### `PUT /api/admin/brands/{brand_id}/quota`
+Overrides a brand's daily usage counters (useful for resetting limits in testing/support).
 
-**Description:** Manually overrides the daily generation and posting counters for a brand. Useful for resetting limits during testing or granting a brand additional capacity.  
-**Auth:** 👑 Admin  
-
-**Path Params:** `brand_id` (int)  
-
-**Request Body:**
+**Request Body** (JSON):
 ```json
 {
   "generations_today": 0,
@@ -1443,11 +1027,11 @@ username=user@example.com&password=SecurePassword123
 }
 ```
 
-**Response `200 OK`:**
+**Response** `200`:
 ```json
 {
   "ok": true,
-  "brand_id": 1,
+  "brand_id": 5,
   "generations_today": 0,
   "posts_today": 0
 }
@@ -1455,30 +1039,146 @@ username=user@example.com&password=SecurePassword123
 
 ---
 
-## Appendix A — Environment Variables Reference
+## 13. Content Status State Machine
 
-All configuration is loaded from `backend/.env`. The server will throw a `RuntimeError` on startup if `DATABASE_URL` is missing.
+```
+                    ┌─────────┐
+         [create]   │  DRAFT  │
+         ──────────►│         │◄───────────────────────────
+                    └────┬────┘                           │
+                         │ /submit                        │
+                         ▼                                │
+               ┌──────────────────┐                       │
+               │ PENDING_APPROVAL │                       │
+               └────────┬─────────┘                       │
+                        │                                 │
+            ┌───────────┤                                 │
+            │ /reject   │ /approve                        │
+            ▼           ▼                                 │
+        ┌──────────┐ ┌──────────┐                         │
+        │ REJECTED │ │ APPROVED │                         │
+        └──────────┘ └────┬─────┘                         │
+                          │ /schedule or /smart_schedule   │
+                          │ or approve_and_queue           │
+                          ▼                               │
+                    ┌───────────┐                         │
+                    │ SCHEDULED │──── /remove_queue ──────┘
+                    └─────┬─────┘       (→ DRAFT)
+                          │ scheduler fires OR /publish
+                          ▼
+                    ┌───────────┐
+                    │ PUBLISHED │
+                    └───────────┘
+```
 
-| Variable | Required | Description |
-|---|---|---|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string. Format: `postgresql://user:password@host:port/dbname` |
-| `GEMINI_API_KEY` | ✅ (primary LLM) | Google Gemini API key for AI generation |
-| `GROQ_API_KEY` | ❌ (preferred) | Groq API key. If present, used instead of Gemini for faster inference |
-| `TWITTER_CLIENT_ID` | ✅ (for X features) | OAuth 2.0 client ID from the Twitter Developer Portal |
-| `TWITTER_CLIENT_SECRET` | ✅ (for X features) | OAuth 2.0 client secret |
-| `GMAIL_USER` | ❌ | Gmail address for sending OTPs. OTPs currently print to terminal as fallback |
-| `GMAIL_APP_PASSWORD` | ❌ | 16-character Gmail App Password (do not use regular password) |
-| `SECRET_KEY` | ❌ | JWT signing secret. Defaults to a hardcoded dev key if unset — **always override in production** |
+**Direct shortcut**: `approve_and_queue` goes directly `DRAFT → SCHEDULED`.
 
 ---
 
-## Appendix B — Rate Limits Summary
+## 14. Queue Recalculation Logic
 
-| Resource | Limit | Scope | Reset |
-|---|---|---|---|
-| AI Content Generation | 4 runs/day | Per brand | Midnight (UTC) |
-| Social Post Publishing | 3 posts/day | Per brand | Midnight (UTC) |
-| Scheduler Interval | Every 30 seconds | System-wide | N/A |
-| Trend Cache TTL | 4 hours | Per niche keyword | Rolling |
-| JWT Token Lifetime | 7 days | Per token | After expiry |
-| Auto-Queue Threshold | 3 scheduled items minimum | Per brand in `auto` mode | Continuous |
+### `recalculate_queue(brand_id, db)`
+
+Assigns real datetime slots to all SCHEDULED items based on the PostingPlan configuration.
+
+**Algorithm**:
+```
+1. Fetch PostingPlan for brand
+2. Fetch all SCHEDULED + APPROVED items (ordered by created_at)
+3. If no plan or plan has no active_days/time_slots:
+   → Revert all items to APPROVED status (remove scheduled dates)
+4. Build slot list:
+   - Start from now, iterate day by day
+   - For each day matching active_days[], add each time_slot as a datetime
+   - Stop when we have enough slots for all items
+5. Assign slots[i] → items[i].scheduled_for
+6. Commit
+```
+
+This ensures items are always slotted in chronological order into the next available posting windows.
+
+---
+
+## 15. Email OTP Service
+
+### `send_otp_email(to_email, otp_code, is_resend)`
+
+Sends an HTML-formatted OTP email.
+
+**Gmail SMTP Connection**:
+```
+Server: smtp.gmail.com:587
+Security: STARTTLS
+Auth: App Password (not Google account password)
+```
+
+**Fallback**: If `GMAIL_USER` or `GMAIL_APP_PASSWORD` not set, prints OTP to terminal:
+```
+============================================================
+ [OTP SERVICE] Verification Code for user@example.com: 48321
+ (Set GMAIL_USER and GMAIL_APP_PASSWORD in .env to deliver via email)
+============================================================
+```
+
+---
+
+## 16. Error Handling Patterns
+
+| Situation | HTTP Status | Detail Message |
+|---|---|---|
+| JWT invalid/expired | 401 | "Could not validate credentials" |
+| Account not verified | 403 | "Account not verified. Please verify your OTP first." |
+| Non-admin access | 403 | "Forbidden: Administrative access required." |
+| Resource not found | 404 | "[Resource] not found" |
+| Business logic violation | 400 | Descriptive error (e.g. "Only DRAFT content can be edited") |
+| Daily limit reached | 429 | "Daily post generation limit reached (4 max per day)" |
+| AI generation failure | 500 | "AI Generation failed: {detail}" |
+| No API keys configured | 500 | "Neither GROQ_API_KEY nor GEMINI_API_KEY is configured" |
+
+---
+
+## 17. Rate Limiting
+
+| Resource | Limit | Reset |
+|---|---|---|
+| AI Generations per brand | **4 per day** | Midnight (new calendar day) |
+| Posts published per brand | **3 per day** | Midnight (new calendar day) |
+| Trend refresh | **5-minute client-side cooldown** | Per session (localStorage) |
+| Trend cache (server) | **4-hour TTL** | Per niche keyword |
+
+Limits are enforced via `generations_today`/`last_generation_date` and `posts_today`/`last_post_date` columns on the `Brand` model. Admins can reset these via the Quota Manager.
+
+---
+
+## 18. Running the Backend
+
+### Prerequisites
+- Python 3.9+
+- PostgreSQL running with a database created
+- `.env` file configured
+
+### Setup
+```powershell
+# Navigate to backend
+cd backend
+
+# Create virtual environment
+python -m venv venv
+venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the server
+uvicorn main:app --reload --port 8000
+```
+
+### API Documentation
+Interactive Swagger UI available at: **`http://localhost:8000/docs`**  
+ReDoc available at: **`http://localhost:8000/redoc`**
+
+### Promote a User to ADMIN
+```powershell
+# Edit promote_user.py with target email, then run:
+python promote_user.py
+```
