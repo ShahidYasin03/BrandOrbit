@@ -463,6 +463,15 @@ def update_brand(brand_id: int, brand_update: schemas.BrandCreate, db: Session =
     db.refresh(db_brand)
     return db_brand
 
+@app.delete("/api/brands/{brand_id}")
+def delete_brand(brand_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_verified_user)):
+    db_brand = db.query(models.Brand).filter(models.Brand.id == brand_id, models.Brand.owner_id == current_user.id).first()
+    if not db_brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    db.delete(db_brand)
+    db.commit()
+    return {"ok": True}
+
 class ModeUpdate(BaseModel):
     automation_mode: str
 

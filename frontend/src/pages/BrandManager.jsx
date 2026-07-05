@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../api';
+import { useBrand } from '../context/BrandContext';
 import { Settings, Target, Key, Plus, Sparkles, Edit3 } from 'lucide-react';
 
 const SUGGESTIONS = {
@@ -9,7 +10,7 @@ const SUGGESTIONS = {
 };
 
 const BrandManager = () => {
-  const [brands, setBrands] = useState([]);
+  const { refreshBrands, selectedBrand } = useBrand();
   const [isEditing, setIsEditing] = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [newBrand, setNewBrand] = useState({ 
@@ -35,15 +36,10 @@ const BrandManager = () => {
 
   function fetchBrands() {
     setFetchError(null);
-    api.get('/brands/')
-      .then(res => {
-        console.log('Brands fetched:', res.data);
-        setBrands(res.data);
-      })
-      .catch(err => {
-        console.error('Failed to fetch brands:', err?.response?.data || err);
-        setFetchError(err?.response?.data?.detail || 'Failed to load brands. Are you logged in?');
-      });
+    refreshBrands().catch(err => {
+      console.error('Failed to fetch brands:', err);
+      setFetchError('Failed to load brands. Are you logged in?');
+    });
   }
 
   const handleCreateBrand = (e) => {
@@ -108,7 +104,7 @@ const BrandManager = () => {
       });
   };
 
-  const activeBrand = brands.length > 0 ? brands[0] : null;
+  const activeBrand = selectedBrand;
   const showForm = !activeBrand || isEditing;
 
   return (

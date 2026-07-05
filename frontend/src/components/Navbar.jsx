@@ -1,20 +1,24 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Target, Sparkles, LogOut, CalendarDays, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useBrand } from '../context/BrandContext';
 import logo from '../assets/HorizontalLogo.svg';
 
 const Navbar = () => {
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { selectedBrandId } = useBrand();
   const navigate = useNavigate();
 
   const handleLogout = () => { logout(); navigate('/'); };
 
+  const bid = selectedBrandId;
+
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard',      icon: LayoutDashboard },
-    { path: '/brands',    label: 'Brand Manager',  icon: Target },
-    { path: '/workspace', label: 'AI Workspace',   icon: Sparkles },
-    { path: '/schedule',  label: 'Schedule Engine', icon: CalendarDays },
+    { path: '/dashboard',                        label: 'Dashboard',      icon: LayoutDashboard },
+    { path: '/brands',                           label: 'Brand Manager',  icon: Target },
+    { path: bid ? `/workspace/${bid}` : '/workspace', label: 'AI Workspace',   icon: Sparkles },
+    { path: bid ? `/schedule/${bid}`  : '/schedule',  label: 'Schedule Engine', icon: CalendarDays },
   ];
 
   if (user?.role?.toUpperCase() === 'ADMIN') {
@@ -44,9 +48,12 @@ const Navbar = () => {
       {/* Nav links */}
       <ul className="flex-1 space-y-0.5 px-3">
         {navItems.map(({ path, label, icon: Icon }) => {
-          const isActive = location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
+          // Match active state for both /workspace and /workspace/:id
+          const basePath = path.split('/').slice(0, 2).join('/');
+          const isActive = location.pathname === path ||
+            (basePath !== '/' && location.pathname.startsWith(basePath));
           return (
-            <li key={path}>
+            <li key={label}>
               <Link
                 to={path}
                 className="flex items-center gap-3 px-3 py-2.5 transition-all duration-200 text-sm font-medium"
@@ -112,3 +119,4 @@ const Navbar = () => {
 };
 
 export default Navbar;
+

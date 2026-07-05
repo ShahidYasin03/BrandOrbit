@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
+import { useBrand } from '../context/BrandContext';
 import { Sparkles, RefreshCw, TrendingUp, Check, Edit3, Trash2, CheckCircle2, Send, Clock } from 'lucide-react';
 
 const ContentWorkspace = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const brandId = id || 1;
+  const { selectedBrandId } = useBrand();
+  // URL param takes priority; fall back to globally selected brand (never default to 1)
+  const brandId = id ? parseInt(id, 10) : selectedBrandId;
 
   const [contents, setContents] = useState([]);
   const [trends, setTrends] = useState([]);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api';
+import { useBrand } from '../context/BrandContext';
 import { CalendarDays, Clock, Zap, Target, Save, CheckCircle2, Activity, Trash2, Send, ListOrdered } from 'lucide-react';
 
 const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -8,7 +9,9 @@ const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "S
 const ScheduleEngine = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const brandId = id || 1;
+  const { selectedBrandId } = useBrand();
+  // URL param takes priority; fall back to globally selected brand (never default to 1)
+  const brandId = id ? parseInt(id, 10) : selectedBrandId;
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

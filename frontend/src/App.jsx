@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { useRef, useEffect } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { BrandProvider } from "./context/BrandContext";
 import Landing from "./pages/Landing";
 import VerifyOTP from "./pages/VerifyOTP";
 import DashboardHome from "./pages/DashboardHome";
@@ -127,6 +128,7 @@ const DashboardLayout = ({ children }) => {
 function App() {
   return (
     <AuthProvider>
+      <BrandProvider>
       <Router>
         <Routes>
           {/* Public Routes */}
@@ -192,6 +194,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
+      </BrandProvider>
     </AuthProvider>
   );
 }
