@@ -18,7 +18,7 @@ api.interceptors.response.use(
   (error) => {
     if (error?.response?.status === 401) {
       const authPages = ['/login', '/register', '/verify-otp'];
-      const onAuthPage = authPages.some(p => window.location.pathname.startsWith(p));
+      const onAuthPage = authPages.some(p => window.location.pathname.startsWith(p)) || window.location.pathname === '/';
       if (!onAuthPage) {
         localStorage.removeItem('token');
         window.location.href = '/login';

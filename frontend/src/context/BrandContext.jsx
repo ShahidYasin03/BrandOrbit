@@ -1,9 +1,12 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api';
+import { useAuth } from './AuthContext';
 
 const BrandContext = createContext();
 
 export const BrandProvider = ({ children }) => {
+  const { user } = useAuth();
+  
   // Persist selected brand ID in sessionStorage so it survives page navigations
   // but resets when the browser tab is closed (avoids stale state across logins).
   const [selectedBrandId, setSelectedBrandIdRaw] = useState(() => {
@@ -16,6 +19,12 @@ export const BrandProvider = ({ children }) => {
 
   // Load all brands once on mount (after login resolves, AuthProvider renders children)
   const refreshBrands = () => {
+    if (!user) {
+      setBrands([]);
+      setBrandsLoading(false);
+      return Promise.resolve([]);
+    }
+    setBrandsLoading(true);
     return api.get('/brands/')
       .then(res => {
         const list = res.data || [];
@@ -39,7 +48,7 @@ export const BrandProvider = ({ children }) => {
       .finally(() => setBrandsLoading(false));
   };
 
-  useEffect(() => { refreshBrands(); }, []);
+  useEffect(() => { refreshBrands(); }, [user]);
 
   const setSelectedBrandId = (id) => {
     setSelectedBrandIdRaw(id);
