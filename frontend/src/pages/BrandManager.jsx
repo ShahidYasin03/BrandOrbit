@@ -87,7 +87,7 @@ const BrandManager = () => {
       })
       .catch(err => {
         console.error("Failed to initiate X connection:", err);
-        alert("Failed to initiate X connection. Make sure TWITTER_CLIENT_ID is set in your .env file.");
+        alert("Failed to initiate X connection. Please try again or contact support.");
       });
   };
 

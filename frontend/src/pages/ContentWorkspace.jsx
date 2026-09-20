@@ -91,7 +91,7 @@ const ContentWorkspace = () => {
       .then(fetchContent)
       .catch(err => {
         console.error(err);
-        alert('Failed to generate. Check backend API keys.');
+        alert('Content generation failed. Please try again later.');
       })
       .finally(() => setIsGenerating(false));
   };

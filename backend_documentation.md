@@ -138,7 +138,7 @@ Key packages from `requirements.txt`:
 
 ## 5. Database Configuration
 
-**File**: [`database.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/database.py)
+**File**: [`database.py`](file:///BrandOrbit/backend/database.py)
 
 The database layer uses SQLAlchemy with the pg8000 pure-Python driver for compatibility with Python 3.12+.
 
@@ -167,7 +167,7 @@ Used with `Depends(get_db)` on every endpoint that needs database access. Tables
 
 ## 6. Data Models
 
-**File**: [`models.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/models.py)
+**File**: [`models.py`](file:///BrandOrbit/backend/models.py)
 
 ### 6.1 Enums
 
@@ -288,7 +288,7 @@ Used with `Depends(get_db)` on every endpoint that needs database access. Tables
 
 ## 7. Pydantic Schemas
 
-**File**: [`schemas.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/schemas.py)
+**File**: [`schemas.py`](file:///BrandOrbit/backend/schemas.py)
 
 All schemas use `from_attributes = True` (Pydantic v2) for SQLAlchemy ORM compatibility.
 
@@ -335,7 +335,7 @@ All schemas use `from_attributes = True` (Pydantic v2) for SQLAlchemy ORM compat
 
 ## 8. Authentication System
 
-**File**: [`auth.py`](file:///e:/Programming/Final%20Year%20Project/My_FYP/backend/auth.py)
+**File**: [`auth.py`](file:///BrandOrbit/backend/auth.py)
 
 ### Configuration
 ```python
@@ -1182,3 +1182,4 @@ ReDoc available at: **`http://localhost:8000/redoc`**
 # Edit promote_user.py with target email, then run:
 python promote_user.py
 ```
+

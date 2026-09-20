@@ -132,7 +132,7 @@ const DashboardHome = () => {
   const handleConnectX = (brandId) => {
     api.get(`/auth/twitter/login?brand_id=${brandId}`)
       .then(res => { if (res.data?.auth_url) window.location.href = res.data.auth_url; })
-      .catch(() => alert('Failed to initiate X connection. Ensure TWITTER_CLIENT_ID is set.'));
+      .catch(() => alert('Failed to initiate X connection. Please try again or contact support.'));
   };
 
   /* ── delete brand ── */

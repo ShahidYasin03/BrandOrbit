@@ -19,7 +19,7 @@
 
 ## ✨ What is BrandOrbit?
 
-BrandOrbit is a production-ready, AI-first content management and social automation platform built as a Final Year Project. It solves the pain of manual social media management for brands and agencies by connecting:
+BrandOrbit is a production-ready, AI-first content management and social automation platform. It solves the pain of manual social media management for brands and agencies by connecting:
 
 - 📡 **Live Google Trends** → detects what's buzzing in your niche right now
 - 🤖 **Groq LLaMA-3.3-70B AI** (+ Google Gemini fallback) → writes platform-optimised tweets in your brand's exact voice
@@ -178,7 +178,7 @@ All foreign key cascades are configured — deleting a user removes all their br
 ### Repository Structure
 
 ```
-My_FYP/
+BrandOrbit/
 ├── backend/
 │   ├── main.py                 # FastAPI application (all routes, scheduler, AI & trend logic)
 │   ├── auth.py                 # JWT authentication helpers & dependency guards
@@ -315,7 +315,7 @@ npm run dev
 
 ## 🏆 Project Team
 
-BrandOrbit was designed and built as a Final Year Project to solve real-world AI-driven social content coordination challenges.
+BrandOrbit was designed and built to solve real-world AI-driven social content coordination challenges.
 
 For help or questions, please open a GitHub Issue.
 

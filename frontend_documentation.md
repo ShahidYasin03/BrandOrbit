@@ -130,7 +130,7 @@ frontend/
 
 ## 4. Application Entry Point
 
-**File**: [`main.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/main.jsx)
+**File**: [`main.jsx`](file:///BrandOrbit/frontend/src/main.jsx)
 
 ```jsx
 import { StrictMode } from 'react'
@@ -151,7 +151,7 @@ Mounts the React application into `<div id="root">` in `index.html`. React 19's 
 
 ## 5. Routing & Navigation
 
-**File**: [`App.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/App.jsx)
+**File**: [`App.jsx`](file:///BrandOrbit/frontend/src/App.jsx)
 
 ### Route Map
 
@@ -176,7 +176,7 @@ Mounts the React application into `<div id="root">` in `index.html`. React 19's 
 
 ## 6. Authentication Context
 
-**File**: [`context/AuthContext.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/context/AuthContext.jsx)
+**File**: [`context/AuthContext.jsx`](file:///BrandOrbit/frontend/src/context/AuthContext.jsx)
 
 ### State
 | Property | Type | Description |
@@ -227,7 +227,7 @@ const { user, login, logout, loading } = useAuth();
 
 ## 7. API Client (axios)
 
-**File**: [`api.js`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/api.js)
+**File**: [`api.js`](file:///BrandOrbit/frontend/src/api.js)
 
 ```javascript
 const api = axios.create({
@@ -310,7 +310,7 @@ Two layered background effects used in the `DashboardLayout` and `Landing`:
 
 ### 9.1 Navbar
 
-**File**: [`components/Navbar.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/components/Navbar.jsx)
+**File**: [`components/Navbar.jsx`](file:///BrandOrbit/frontend/src/components/Navbar.jsx)
 
 **Type**: Sticky sidebar navigation (240px wide)
 
@@ -354,7 +354,7 @@ Displays:
 
 ### 10.1 Landing Page
 
-**File**: [`pages/Landing.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/Landing.jsx)
+**File**: [`pages/Landing.jsx`](file:///BrandOrbit/frontend/src/pages/Landing.jsx)
 
 **Route**: `/`  
 **Auth**: Public
@@ -394,7 +394,7 @@ The header shows a "Dashboard →" button instead of "Log in" / "Sign up".
 
 ### 10.2 Login Modal
 
-**File**: [`pages/Login.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/Login.jsx)
+**File**: [`pages/Login.jsx`](file:///BrandOrbit/frontend/src/pages/Login.jsx)
 
 **Type**: Modal overlay (fixed, centered, backdrop blur)  
 **Rendered by**: `Landing.jsx` when `?modal=login`
@@ -432,7 +432,7 @@ The header shows a "Dashboard →" button instead of "Log in" / "Sign up".
 
 ### 10.3 Register Modal
 
-**File**: [`pages/Register.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/Register.jsx)
+**File**: [`pages/Register.jsx`](file:///BrandOrbit/frontend/src/pages/Register.jsx)
 
 **Type**: Modal overlay  
 **Rendered by**: `Landing.jsx` when `?modal=register`
@@ -461,7 +461,7 @@ The header shows a "Dashboard →" button instead of "Log in" / "Sign up".
 
 ### 10.4 VerifyOTP Page
 
-**File**: [`pages/VerifyOTP.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/VerifyOTP.jsx)
+**File**: [`pages/VerifyOTP.jsx`](file:///BrandOrbit/frontend/src/pages/VerifyOTP.jsx)
 
 **Route**: `/verify-otp`  
 **Auth**: Authenticated but unverified users
@@ -484,7 +484,7 @@ Collects the 5-digit OTP code sent to the user's email after registration. Marks
 
 ### 10.5 DashboardHome Page
 
-**File**: [`pages/DashboardHome.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/DashboardHome.jsx)
+**File**: [`pages/DashboardHome.jsx`](file:///BrandOrbit/frontend/src/pages/DashboardHome.jsx)
 
 **Route**: `/dashboard`  
 **Auth**: Protected (verified user)
@@ -521,7 +521,7 @@ If the user has no brands, shows a message with a "Setup Your First Brand" link 
 
 ### 10.6 BrandManager Page
 
-**File**: [`pages/BrandManager.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/BrandManager.jsx)
+**File**: [`pages/BrandManager.jsx`](file:///BrandOrbit/frontend/src/pages/BrandManager.jsx)
 
 **Route**: `/brands`  
 **Auth**: Protected (verified user)
@@ -590,7 +590,7 @@ Displayed alongside the brand profile view. Shows:
 
 ### 10.7 ContentWorkspace Page
 
-**File**: [`pages/ContentWorkspace.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/ContentWorkspace.jsx)
+**File**: [`pages/ContentWorkspace.jsx`](file:///BrandOrbit/frontend/src/pages/ContentWorkspace.jsx)
 
 **Routes**: `/workspace` · `/workspace/:id`  
 **Auth**: Protected (verified user)
@@ -679,7 +679,7 @@ Each draft card shows:
 
 ### 10.8 ScheduleEngine Page
 
-**File**: [`pages/ScheduleEngine.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/ScheduleEngine.jsx)
+**File**: [`pages/ScheduleEngine.jsx`](file:///BrandOrbit/frontend/src/pages/ScheduleEngine.jsx)
 
 **Routes**: `/schedule` · `/schedule/:id`  
 **Auth**: Protected (verified user)
@@ -764,7 +764,7 @@ Auto-refresh timer: Same 35-second-after-due logic as ContentWorkspace.
 
 ### 10.9 AdminPanel Page
 
-**File**: [`pages/AdminPanel.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/pages/AdminPanel.jsx)
+**File**: [`pages/AdminPanel.jsx`](file:///BrandOrbit/frontend/src/pages/AdminPanel.jsx)
 
 **Route**: `/admin`  
 **Auth**: Protected + ADMIN role required
@@ -849,7 +849,7 @@ Read-only brand details view (500px tall, scrollable):
 
 ## 11. Route Guards
 
-**File**: [`App.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/App.jsx)
+**File**: [`App.jsx`](file:///BrandOrbit/frontend/src/App.jsx)
 
 ### `ProtectedRoute`
 ```jsx
@@ -886,7 +886,7 @@ Used on top of `ProtectedRoute` for the `/admin` path. Non-admin users are silen
 
 ## 12. Dashboard Layout
 
-**Component**: `DashboardLayout` in [`App.jsx`](file:///e:/Programming/Final%20Year%20Project/My_FYP/frontend/src/App.jsx)
+**Component**: `DashboardLayout` in [`App.jsx`](file:///BrandOrbit/frontend/src/App.jsx)
 
 Wraps all protected dashboard pages with:
 
@@ -998,3 +998,4 @@ The frontend requires the backend server running at `http://localhost:8000`. Sta
 cd backend
 uvicorn main:app --reload --port 8000
 ```
+

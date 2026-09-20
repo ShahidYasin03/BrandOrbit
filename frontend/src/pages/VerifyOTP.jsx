@@ -153,9 +153,7 @@ const VerifyOTP = () => {
           <p className="text-sm mb-4" style={{ color: '#8b949e' }}>
             We&apos;ve sent a verification code to <span className="font-semibold text-teal-400">{user?.email || 'your email'}</span>.
           </p>
-          <p className="text-xs mb-8" style={{ color: '#4a5568' }}>
-            For local testing, the code has been printed directly to your backend server console.
-          </p>
+
 
           {error && (
             <div className="px-4 py-3 rounded-xl mb-6 text-sm text-left animate-fade-in"
